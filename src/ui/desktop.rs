@@ -97,6 +97,13 @@ impl Desktop {
         let screen = ctx.screen_rect();
         let area = Rect::from_min_max(Pos2::new(screen.left(), screen.top() + MENUBAR_H), screen.max);
         let narrow = screen.width() < 1024.0;
+        // Light or dark windows, from the user's Appearance setting.
+        let light = match core.settings.appearance.as_str() {
+            "light" => true,
+            "auto" => ctx.system_theme() == Some(egui::Theme::Light),
+            _ => false,
+        };
+        theme::set_light(ctx, light);
         let enter = ((now - self.entered_at) / 0.5).clamp(0.0, 1.0) as f32;
 
         // Things the Stream Deck asked for.
@@ -201,8 +208,8 @@ impl Desktop {
                     let r = Rect::from_min_size(Pos2::new(x, area.top() + 12.0), size);
                     let p = ui.painter();
                     theme::shadow(p, r, 14, 12, 30, 0.35 * alpha);
-                    card(p, r, 14, fade(rgba(10, 20, 50, 0.92), alpha), fade(white(0.18), alpha));
-                    p.galley(r.center() - g.size() / 2.0, g, fade(WHITE, alpha));
+                    card(p, r, 14, fade(menu_bg(), alpha), fade(white(0.18), alpha));
+                    p.galley(r.center() - g.size() / 2.0, g, fade(ink(), alpha));
                 });
                 ctx.request_repaint();
             }
@@ -273,11 +280,11 @@ impl Desktop {
                 if !full {
                     theme::shadow(&p, rect, radius, if is_active { 30 } else { 20 }, if is_active { 80 } else { 50 }, if is_active { 0.5 } else { 0.35 });
                 }
-                p.rect(rect, CornerRadius::same(radius), Color32::from_rgb(20, 43, 72), Stroke::new(if full { 0.0_f32 } else { 1.0 }, if is_active { white(0.28) } else { white(0.18) }), StrokeKind::Inside);
+                p.rect(rect, CornerRadius::same(radius), window_bg(), Stroke::new(if full { 0.0_f32 } else { 1.0 }, if is_active { white(0.28) } else { white(0.18) }), StrokeKind::Inside);
 
                 // Title bar
                 let bar = Rect::from_min_size(rect.min, Vec2::new(rect.width(), 38.0));
-                p.rect_filled(bar.shrink2(Vec2::new(1.0, 0.0)).translate(Vec2::new(0.0, 1.0)), CornerRadius { nw: radius.saturating_sub(1), ne: radius.saturating_sub(1), sw: 0, se: 0 }, rgba(0, 0, 0, 0.22));
+                p.rect_filled(bar.shrink2(Vec2::new(1.0, 0.0)).translate(Vec2::new(0.0, 1.0)), CornerRadius { nw: radius.saturating_sub(1), ne: radius.saturating_sub(1), sw: 0, se: 0 }, sidebar_bg());
                 p.hline(bar.x_range(), bar.bottom(), Stroke::new(1.0_f32, white(0.1)));
                 let bar_resp = ui.interact(bar, Id::new(("bar", win.id)), Sense::click_and_drag());
                 if bar_resp.double_clicked() && !narrow {
@@ -382,14 +389,14 @@ impl Desktop {
             let (_, _) = ui.allocate_exact_size(bar.size(), Sense::click());
             let p = ui.painter();
             p.rect_filled(bar, 0.0, rgba(0, 0, 0, 0.32));
-            p.hline(bar.x_range(), bar.bottom() - 0.5, Stroke::new(1.0_f32, white(0.1)));
+            p.hline(bar.x_range(), bar.bottom() - 0.5, Stroke::new(1.0_f32, lit(0.1)));
 
             // System menu (the logo)
             logo_rect = Rect::from_min_size(Pos2::new(bar.left() + 10.0, bar.top() + 3.0), Vec2::new(34.0, 24.0));
             let r = ui.interact(logo_rect, Id::new("menubar-logo"), Sense::click());
             let t = ui.ctx().animate_bool_with_time(r.id, r.hovered() || self.menu_open, 0.2);
             if t > 0.0 {
-                p.rect_filled(logo_rect, 6.0, white(0.16 * t));
+                p.rect_filled(logo_rect, 6.0, lit(0.16 * t));
             }
             if r.hovered() {
                 ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
@@ -399,7 +406,7 @@ impl Desktop {
                 self.menu_open = !self.menu_open;
             }
             let app_name = self.wm.active().and_then(wm::app).map_or("Victoria Ambulance", |a| a.name);
-            p.text(Pos2::new(logo_rect.right() + 12.0, bar.center().y), Align2::LEFT_CENTER, app_name, font(13.0, 600), WHITE);
+            p.text(Pos2::new(logo_rect.right() + 12.0, bar.center().y), Align2::LEFT_CENTER, app_name, font(13.0, 600), Color32::WHITE);
 
             // Clock and status on the right
             let now_local = chrono::Local::now();
@@ -407,16 +414,16 @@ impl Desktop {
             let date = super::format::day(now_local);
             let f = font(13.0, 400);
             let mut x = bar.right() - 10.0;
-            let r = p.text(Pos2::new(x, bar.center().y), Align2::RIGHT_CENTER, &time, f.clone(), white(0.85));
+            let r = p.text(Pos2::new(x, bar.center().y), Align2::RIGHT_CENTER, &time, f.clone(), lit(0.85));
             x = r.left() - 12.0;
             if screen.width() >= 768.0 {
-                let r = p.text(Pos2::new(x, bar.center().y), Align2::RIGHT_CENTER, &date, f.clone(), white(0.85));
+                let r = p.text(Pos2::new(x, bar.center().y), Align2::RIGHT_CENTER, &date, f.clone(), lit(0.85));
                 x = r.left() - 12.0;
-                let r = p.text(Pos2::new(x, bar.center().y), Align2::RIGHT_CENTER, "Local only", f.clone(), white(0.85));
+                let r = p.text(Pos2::new(x, bar.center().y), Align2::RIGHT_CENTER, "Local only", f.clone(), lit(0.85));
                 x = r.left() - 6.0;
             }
             let status_rect = Rect::from_center_size(Pos2::new(x - 4.0, bar.center().y), Vec2::splat(8.0));
-            theme::dot(p, status_rect.center(), false, false);
+            p.circle_filled(status_rect.center(), 4.0, lit(0.4));
             ui.interact(status_rect.expand(4.0), Id::new("status-tip"), Sense::hover()).on_hover_text("No database connected yet");
         });
         let _ = core;
@@ -444,7 +451,7 @@ impl Desktop {
                     "about" => self.open("about", area, now),
                     "settings" => self.open("settings", area, now),
                     "update" => {
-                        self.apps.settings.current = super::apps::settings::UPDATE_SECTION;
+                        self.apps.settings.go(super::apps::settings::UPDATE_SECTION);
                         self.open("settings", area, now);
                     }
                     "restart" => self.ask_power(Power::Restart, now),
@@ -497,7 +504,7 @@ impl Desktop {
             let (_, _) = ui.allocate_exact_size(dock.size(), Sense::click());
             let p = ui.painter().clone();
             theme::shadow(&p, dock, RADIUS_CARD, 0, 80, 0.3);
-            card(&p, dock, RADIUS_CARD, rgba(255, 255, 255, 0.18), white(0.25));
+            card(&p, dock, RADIUS_CARD, rgba(255, 255, 255, 0.18), lit(0.25));
 
             let mut x = dock.left() + pad.x;
             let y = dock.top() + pad.y;
@@ -510,15 +517,15 @@ impl Desktop {
                 let corner = (14.0 * s * icon / 52.0) as u8;
                 theme::shadow(&p, r, corner, 6, 16, 0.3);
                 if id == "launcher" {
-                    p.rect(r, CornerRadius::same(corner), white(0.92), Stroke::new(1.0_f32, white(0.3)), StrokeKind::Inside);
+                    p.rect(r, CornerRadius::same(corner), lit(0.92), Stroke::new(1.0_f32, lit(0.3)), StrokeKind::Inside);
                     let mut child = ui.new_child(UiBuilder::new().max_rect(Rect::from_center_size(r.center(), Vec2::splat(24.0 * s))));
                     icons::launcher_dots(&mut child, 24.0 * s, ACCENT);
                 } else if let Some(app) = wm::app(id) {
                     paint_app_icon(ui, r, corner, app.tint);
                     let mut child = ui.new_child(UiBuilder::new().max_rect(Rect::from_center_size(r.center(), Vec2::splat(26.0 * s * icon / 52.0))));
-                    icons::line_icon(&mut child, id, icons::app_icon_paths(id), 26.0 * s * icon / 52.0, WHITE, 1.8);
+                    icons::line_icon(&mut child, id, icons::app_icon_paths(id), 26.0 * s * icon / 52.0, Color32::WHITE, 1.8);
                     if self.wm.get(id).is_some() {
-                        p.circle_filled(Pos2::new(slot.center().x, slot.bottom() + 4.0), 2.0, white(0.85));
+                        p.circle_filled(Pos2::new(slot.center().x, slot.bottom() + 4.0), 2.0, lit(0.85));
                     }
                 }
                 if resp.hovered() {
@@ -536,7 +543,7 @@ impl Desktop {
                 }
                 x += icon + gap;
                 if i == 0 {
-                    p.vline(x - gap / 2.0 + 0.5, (dock.top() + 4.0 + pad.y)..=(dock.bottom() - 4.0 - pad.y), Stroke::new(1.0_f32, white(0.25)));
+                    p.vline(x - gap / 2.0 + 0.5, (dock.top() + 4.0 + pad.y)..=(dock.bottom() - 4.0 - pad.y), Stroke::new(1.0_f32, lit(0.25)));
                     x += 1.0 + gap;
                 }
             }
@@ -640,7 +647,7 @@ impl Desktop {
             let gx = screen.center().x - grid_w / 2.0;
             let gy = top + 40.0 + if narrow { 24.0 } else { 36.0 };
             if apps.is_empty() {
-                ui.painter().text(Pos2::new(screen.center().x, gy + 10.0), Align2::CENTER_TOP, "No apps found", font(14.0, 400), white(0.55));
+                ui.painter().text(Pos2::new(screen.center().x, gy + 10.0), Align2::CENTER_TOP, "No apps found", font(14.0, 400), lit(0.55));
             }
             for (i, a) in apps.iter().enumerate() {
                 let (row, col) = (i / cols, i % cols);
@@ -655,8 +662,8 @@ impl Desktop {
                 paint_app_icon(ui, ir, 18, a.tint);
                 let mut child = ui.new_child(UiBuilder::new().max_rect(Rect::from_center_size(ir.center(), Vec2::splat(34.0))));
                 child.set_opacity(appear);
-                icons::line_icon(&mut child, a.id, icons::app_icon_paths(a.id), 34.0, WHITE, 1.8);
-                p.text(Pos2::new(cell.center().x, cell.top() + icon + 10.0), Align2::CENTER_TOP, a.name, font(13.0, 400), fade(WHITE, appear));
+                icons::line_icon(&mut child, a.id, icons::app_icon_paths(a.id), 34.0, Color32::WHITE, 1.8);
+                p.text(Pos2::new(cell.center().x, cell.top() + icon + 10.0), Align2::CENTER_TOP, a.name, font(13.0, 400), fade(Color32::WHITE, appear));
                 if r.hovered() {
                     ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
                 }
@@ -736,7 +743,7 @@ impl Desktop {
             let rect = Rect::from_center_size(screen.center() + Vec2::new(0.0, (1.0 - pop) * 12.0), Vec2::new(w, h));
             let p = ui.painter().clone();
             theme::shadow(&p, rect, 20, 0, 80, 0.35);
-            card(&p, rect, 20, rgba(12, 28, 52, 0.98), white(0.18));
+            card(&p, rect, 20, menu_bg(), white(0.18));
             let mut cu = ui.new_child(UiBuilder::new().max_rect(rect.shrink(24.0)).layout(egui::Layout::top_down(egui::Align::Center)));
             cu.spacing_mut().item_spacing.y = 6.0;
             // Badge
@@ -749,7 +756,7 @@ impl Desktop {
             cu.label(egui::RichText::new(format!("Victoria Ambulance {}  ·  you have {CURRENT}", release.version)).font(font(13.0, 400)).color(white(0.65)));
             if !notes.is_empty() {
                 cu.add_space(6.0);
-                egui::Frame::NONE.fill(rgba(0, 0, 0, 0.2)).corner_radius(CornerRadius::same(12)).inner_margin(egui::Margin::same(10)).show(&mut cu, |ui| {
+                egui::Frame::NONE.fill(white(0.06)).corner_radius(CornerRadius::same(12)).inner_margin(egui::Margin::same(10)).show(&mut cu, |ui| {
                     ui.set_width(w - 48.0 - 20.0);
                     ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
                         ui.label(egui::RichText::new("What's new").font(font(12.0, 600)).color(white(0.6)));
@@ -768,7 +775,7 @@ impl Desktop {
                     cu.label(egui::RichText::new(format!("Downloading… {}%", (frac * 100.0).round())).font(font(13.0, 500)));
                     let (r, _) = cu.allocate_exact_size(Vec2::new(w - 48.0, 6.0), Sense::hover());
                     p.rect_filled(r, 3.0, white(0.18));
-                    p.rect_filled(Rect::from_min_size(r.min, Vec2::new(r.width() * frac, 6.0)), 3.0, WHITE);
+                    p.rect_filled(Rect::from_min_size(r.min, Vec2::new(r.width() * frac, 6.0)), 3.0, select_blue());
                 }
                 UpdateStatus::Available(_) => {
                     cu.horizontal(|ui| {
@@ -780,13 +787,13 @@ impl Desktop {
                             install = true;
                         }
                     });
-                    let g = cu.fonts(|f| f.layout_no_wrap("Details in Settings".into(), font(12.0, 400), ICE));
+                    let g = cu.fonts(|f| f.layout_no_wrap("Details in Settings".into(), font(12.0, 400), ice_text()));
                     let (lr, lresp) = cu.allocate_exact_size(g.size(), Sense::click());
                     if lresp.hovered() {
                         cu.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                        p.hline(lr.x_range(), lr.bottom(), Stroke::new(1.0_f32, ICE));
+                        p.hline(lr.x_range(), lr.bottom(), Stroke::new(1.0_f32, ice_text()));
                     }
-                    p.galley(lr.min, g, ICE);
+                    p.galley(lr.min, g, ice_text());
                     details = lresp.clicked();
                 }
                 _ => {
@@ -799,7 +806,7 @@ impl Desktop {
         } else if (later || details) && matches!(core.update, UpdateStatus::Available(_)) {
             core.update_dismissed = Some(release.version.clone());
             if details {
-                self.apps.settings.current = super::apps::settings::UPDATE_SECTION;
+                self.apps.settings.go(super::apps::settings::UPDATE_SECTION);
                 self.open("settings", area, now);
             }
         }
@@ -886,15 +893,15 @@ pub fn paint_app_icon(ui: &Ui, r: Rect, corner: u8, tint: [u8; 3]) {
         }
     }
     p.add(mesh);
-    p.rect_stroke(r, CornerRadius::same(corner), Stroke::new(1.0_f32, white(0.3)), StrokeKind::Inside);
+    p.rect_stroke(r, CornerRadius::same(corner), Stroke::new(1.0_f32, lit(0.3)), StrokeKind::Inside);
 }
 
 fn tip(p: &egui::Painter, ui: &Ui, bottom_center: Pos2, text: &str) {
     let f = font(12.0, 400);
-    let g = ui.fonts(|fo| fo.layout_no_wrap(text.to_string(), f, WHITE));
+    let g = ui.fonts(|fo| fo.layout_no_wrap(text.to_string(), f, Color32::WHITE));
     let r = Rect::from_center_size(bottom_center - Vec2::new(0.0, (g.size().y + 8.0) / 2.0), g.size() + Vec2::new(20.0, 8.0));
-    card(p, r, 8, rgba(10, 20, 50, 0.88), white(0.18));
-    p.galley(r.center() - g.size() / 2.0, g, WHITE);
+    card(p, r, 8, rgba(10, 20, 50, 0.88), lit(0.18));
+    p.galley(r.center() - g.size() / 2.0, g, Color32::WHITE);
 }
 
 fn menu_height(items: &[(&str, String, bool)]) -> f32 {
@@ -909,7 +916,7 @@ fn menu_area(ctx: &egui::Context, layer: &str, pos: Pos2, width: f32, items: &[(
         let (_, _) = ui.allocate_exact_size(rect.size(), Sense::click());
         let p = ui.painter().clone();
         theme::shadow(&p, rect, 12, 16, 40, 0.4);
-        card(&p, rect, 12, rgba(10, 20, 50, 0.95), white(0.18));
+        card(&p, rect, 12, menu_bg(), white(0.18));
         let mut y = rect.top() + 6.0;
         for (id, label, danger) in items {
             if *id == "-" {
@@ -926,7 +933,7 @@ fn menu_area(ctx: &egui::Context, layer: &str, pos: Pos2, width: f32, items: &[(
                     p.rect_filled(row, 7.0, if *danger { rgba(239, 68, 68, 0.15) } else { white(0.12) });
                     ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
                 }
-                p.text(Pos2::new(row.left() + 10.0, row.center().y), Align2::LEFT_CENTER, label, font(13.0, 400), if *danger { rgba(252, 165, 165, 0.9) } else { WHITE });
+                p.text(Pos2::new(row.left() + 10.0, row.center().y), Align2::LEFT_CENTER, label, font(13.0, 400), if *danger { red_text() } else { ink() });
                 if r.clicked() {
                     *picked = Some(leak(id));
                 }
@@ -961,8 +968,8 @@ pub fn confirm_card(ui: &mut Ui, screen: Rect, title: &str, message: &str, label
     let rect = Rect::from_center_size(screen.center() + Vec2::new(0.0, (1.0 - pop) * 12.0), Vec2::new(w, h) * (0.9 + 0.1 * pop));
     let p = ui.painter().clone();
     theme::shadow(&p, rect, 20, 0, 80, 0.3 * alpha);
-    card(&p, rect, 20, fade(rgba(12, 28, 52, 0.97), alpha), fade(white(0.18), alpha));
-    p.text(Pos2::new(rect.center().x, rect.top() + 24.0), Align2::CENTER_TOP, title, display(18.0, 700), fade(WHITE, alpha));
+    card(&p, rect, 20, fade(menu_bg(), alpha), fade(white(0.18), alpha));
+    p.text(Pos2::new(rect.center().x, rect.top() + 24.0), Align2::CENTER_TOP, title, display(18.0, 700), fade(ink(), alpha));
     let mpos = Pos2::new(rect.center().x - msg.size().x / 2.0, rect.top() + 56.0);
     let msg_h = msg.size().y;
     p.galley(mpos, msg, fade(white(0.65), alpha));

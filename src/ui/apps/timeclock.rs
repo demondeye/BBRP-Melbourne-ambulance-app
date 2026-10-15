@@ -78,7 +78,7 @@ pub fn show(ui: &mut Ui, st: &mut TimeClockUi, core: &mut Core, confirm: &mut Op
         let w = ui.available_width();
         // ── The clock ──
         egui::Frame::NONE
-            .fill(white(0.1))
+            .fill(card_fill())
             .stroke(Stroke::new(1.0_f32, white(0.18)))
             .corner_radius(CornerRadius::same(RADIUS_CARD))
             .inner_margin(Margin::symmetric(16, 22))
@@ -104,7 +104,7 @@ pub fn show(ui: &mut Ui, st: &mut TimeClockUi, core: &mut Core, confirm: &mut Op
                     let job = {
                         let mut j = egui::text::LayoutJob::default();
                         j.append("This month: ", 0.0, egui::TextFormat::simple(font(13.0, 400), white(0.7)));
-                        j.append(&hours(this_month), 0.0, egui::TextFormat::simple(font(13.0, 600), WHITE));
+                        j.append(&hours(this_month), 0.0, egui::TextFormat::simple(font(13.0, 600), ink()));
                         j
                     };
                     ui.label(job);
@@ -117,7 +117,7 @@ pub fn show(ui: &mut Ui, st: &mut TimeClockUi, core: &mut Core, confirm: &mut Op
             ui.label(RichText::new("Shifts").font(display(16.0, 700)));
             if !core.sheet.shifts.is_empty() {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    let g = ui.fonts(|f| f.layout_no_wrap("Clear all".into(), font(12.0, 400), RED_TEXT));
+                    let g = ui.fonts(|f| f.layout_no_wrap("Clear all".into(), font(12.0, 400), red_text()));
                     let (r, resp) = ui.allocate_exact_size(g.size() + Vec2::new(20.0, 8.0), Sense::click());
                     theme::hover_fill(ui, &resp, r, 255, rgba(239, 68, 68, 0.15));
                     ui.painter().galley(r.center() - g.size() / 2.0, g, rgba(252, 165, 165, 0.85));
@@ -155,20 +155,20 @@ pub fn show(ui: &mut Ui, st: &mut TimeClockUi, core: &mut Core, confirm: &mut Op
                 }
                 let count = viewing.map_or(0, |m| m.shifts.len());
                 let total = viewing.map_or(0, |m| m.total + m.running.unwrap_or(0));
-                let right_w = 32.0 + 12.0 + ui.fonts(|f| f.layout_no_wrap(hours(total), display(18.0, 700), WHITE).size().x) + 14.0;
+                let right_w = 32.0 + 12.0 + ui.fonts(|f| f.layout_no_wrap(hours(total), display(18.0, 700), ink()).size().x) + 14.0;
                 ui.allocate_ui_with_layout(Vec2::new((ui.available_width() - right_w).max(60.0), 40.0), Layout::top_down(Align::Min), |ui| {
                     ui.spacing_mut().item_spacing.y = 0.0;
                     let title = if is_current { "This month".to_string() } else { month_label_key(&shown_key) };
-                    let g = ui.fonts(|f| f.layout_no_wrap(title, display(15.0, 700), WHITE));
+                    let g = ui.fonts(|f| f.layout_no_wrap(title, display(15.0, 700), ink()));
                     let (r, resp) = ui.allocate_exact_size(Vec2::new(g.size().x + 30.0, g.size().y + 4.0), Sense::click());
                     let r = r.translate(Vec2::new(-8.0, 0.0));
                     theme::hover_fill(ui, &resp, r, 10, white(0.12));
                     if st.picking {
                         ui.painter().rect_filled(r, 10.0, white(0.12));
                     }
-                    ui.painter().galley(Pos2::new(r.left() + 8.0, r.top() + 2.0), g, WHITE);
+                    ui.painter().galley(Pos2::new(r.left() + 8.0, r.top() + 2.0), g, ink());
                     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(Pos2::new(r.right() - 20.0, r.center().y - 7.0), Vec2::splat(14.0))));
-                    icons::line_icon(&mut child, "chev", icons::CHEVRON, 14.0, WHITE, 2.4);
+                    icons::line_icon(&mut child, "chev", icons::CHEVRON, 14.0, ink(), 2.4);
                     if resp.clicked() {
                         st.picking = !st.picking;
                         st.picker_year = shown_key[..4].parse().unwrap_or(Local::now().year());
@@ -197,15 +197,15 @@ pub fn show(ui: &mut Ui, st: &mut TimeClockUi, core: &mut Core, confirm: &mut Op
                 month_picker(ui, st, &months, &shown_key, &current_key, &oldest_key);
             }
             if !is_current {
-                let g = ui.fonts(|f| f.layout_no_wrap("Back to this month".into(), font(12.0, 400), ICE));
+                let g = ui.fonts(|f| f.layout_no_wrap("Back to this month".into(), font(12.0, 400), ice_text()));
                 ui.horizontal(|ui| {
                     ui.add_space(12.0);
                     let (r, resp) = ui.allocate_exact_size(g.size(), Sense::click());
                     if resp.hovered() {
                         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                        ui.painter().hline(r.x_range(), r.bottom(), Stroke::new(1.0_f32, ICE));
+                        ui.painter().hline(r.x_range(), r.bottom(), Stroke::new(1.0_f32, ice_text()));
                     }
-                    ui.painter().galley(r.min, g, ICE);
+                    ui.painter().galley(r.min, g, ice_text());
                     if resp.clicked() {
                         st.view_key = None;
                     }
@@ -237,7 +237,7 @@ fn nav(ui: &mut Ui, glyph: &str, enabled: bool) -> bool {
     let alpha = if enabled { 1.0 } else { 0.3 };
     let hover = if enabled && resp.hovered() { 0.2 } else { 0.1 };
     ui.painter().circle_filled(r.center(), 16.0, fade(white(hover), alpha));
-    ui.painter().text(r.center() - Vec2::new(0.0, 2.0), Align2::CENTER_CENTER, glyph, font(22.0, 400), fade(WHITE, alpha));
+    ui.painter().text(r.center() - Vec2::new(0.0, 2.0), Align2::CENTER_CENTER, glyph, font(22.0, 400), fade(ink(), alpha));
     if enabled && resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
@@ -251,7 +251,7 @@ fn small_icon_button(ui: &mut Ui, id: &str, paths: &str, danger_hover: bool) -> 
         ui.painter().circle_filled(r.center(), 15.0, if danger_hover { rgba(239, 68, 68, 0.18) } else { white(0.12) });
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
-    let color = if hovered { if danger_hover { RED_TEXT } else { WHITE } } else { white(0.55) };
+    let color = if hovered { if danger_hover { red_text() } else { ink() } } else { white(0.55) };
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_center_size(r.center(), Vec2::splat(15.0))));
     icons::line_icon(&mut child, id, paths, 15.0, color, 2.0);
     resp.clicked()
@@ -380,7 +380,7 @@ fn field(ui: &mut Ui, label: &str, value: &mut String, hint: &str, width: f32, i
         ui.spacing_mut().item_spacing.y = 4.0;
         ui.label(RichText::new(label).font(font(11.0, 400)).color(white(0.65)));
         let (r, _) = ui.allocate_exact_size(Vec2::new(width + 20.0, 30.0), Sense::hover());
-        ui.painter().rect(r, CornerRadius::same(10), rgba(0, 0, 0, 0.25), Stroke::new(1.0_f32, white(0.25)), StrokeKind::Inside);
+        ui.painter().rect(r, CornerRadius::same(10), if is_light() { WHITE } else { rgba(0, 0, 0, 0.25) }, Stroke::new(1.0_f32, white(0.25)), StrokeKind::Inside);
         let edit = egui::TextEdit::singleline(value)
             .id(egui::Id::new(id))
             .frame(false)
@@ -398,7 +398,7 @@ fn month_picker(ui: &mut Ui, st: &mut TimeClockUi, months: &[Month], shown_key: 
     let oldest_year: i32 = oldest_key[..4].parse().unwrap_or(2026);
     let current_year: i32 = current_key[..4].parse().unwrap_or(2026);
     let resp = egui::Frame::NONE
-        .fill(rgba(10, 20, 50, 0.95))
+        .fill(menu_bg())
         .stroke(Stroke::new(1.0_f32, white(0.18)))
         .corner_radius(CornerRadius::same(18))
         .inner_margin(Margin::same(12))
@@ -442,9 +442,9 @@ fn month_picker(ui: &mut Ui, st: &mut TimeClockUi, months: &[Month], shown_key: 
                         let a = if enabled { 1.0 } else { 0.3 };
                         let border = if key == current_key { rgba(162, 203, 237, 0.5) } else { egui::Color32::TRANSPARENT };
                         ui.painter().rect(r, CornerRadius::same(12), fade(fill, a), Stroke::new(1.0_f32, border), StrokeKind::Inside);
-                        let tc = if shown { ACCENT } else { WHITE };
+                        let tc = if shown { ACCENT } else { ink() };
                         ui.painter().text(Pos2::new(r.center().x, r.top() + 8.0), Align2::CENTER_TOP, format::month_short(m as u32), font(13.0, 600), fade(tc, a));
-                        let sc = if shown { ACCENT } else if total > 0 { ICE } else { white(0.5) };
+                        let sc = if shown { ACCENT } else if total > 0 { ice_text() } else { white(0.5) };
                         ui.painter().text(Pos2::new(r.center().x, r.bottom() - 8.0), Align2::CENTER_BOTTOM, if total > 0 { hours(total) } else { "–".into() }, font(11.0, 400), fade(sc, a));
                         if enabled && resp.clicked() {
                             st.view_key = (key != current_key).then_some(key);

@@ -66,7 +66,7 @@ pub fn panel(ui: &mut Ui, id: &str, title: &str, subtitle: &str, add: impl FnOnc
         egui::Frame::NONE.inner_margin(if narrow { egui::Margin::symmetric(16, 18) } else { egui::Margin::symmetric(24, 22) }).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(title).font(display(if narrow { 24.0 } else { 30.0 }, 700)).color(WHITE));
+                ui.label(egui::RichText::new(title).font(display(if narrow { 24.0 } else { 30.0 }, 700)).color(ink()));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(egui::RichText::new(subtitle).font(font(13.0, 400)).color(white(0.55)));
                 });

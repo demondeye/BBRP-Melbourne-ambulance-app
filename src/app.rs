@@ -57,6 +57,8 @@ pub struct App {
     /// Installing an update: when it started, the version and the downloaded file.
     installing: Option<(f64, String, std::path::PathBuf)>,
     install_done: bool,
+    /// Frames drawn so far (used to make sure the window opens maximised).
+    frames: u32,
 }
 
 impl App {
@@ -70,10 +72,11 @@ impl App {
         // A desktop app may always play sound, so it starts straight away.
         crate::chime::play();
         let now = cc.egui_ctx.input(|i| i.time);
-        Self { core, stage: Stage::Boot(Some(now)), power_down: None, installing: None, install_done: false }
+        Self { core, stage: Stage::Boot(Some(now)), power_down: None, installing: None, install_done: false, frames: 0 }
     }
 
     fn to_login(&mut self, now: f64) {
+        // (The login screen sits on the wallpaper; reset the window look for next time.)
         let account = auth::get_account();
         let settings = account.as_ref().map(|a| UserSettings::load(&a.name));
         self.stage = Stage::Login(LoginForm { account, settings, opened_at: now, ..Default::default() });
@@ -114,6 +117,12 @@ impl eframe::App for App {
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let now = ctx.input(|i| i.time);
+        // Always open maximised, filling the screen (Windows can ignore the start-up
+        // request, so ask again on the first few frames).
+        if self.frames < 3 && std::env::var("VA_WINDOWED").is_err() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
+        }
+        self.frames = self.frames.saturating_add(1);
         if ctx.input(|i| i.key_pressed(Key::F11)) {
             let full = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
             ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(!full));
@@ -134,10 +143,10 @@ impl eframe::App for App {
                             let resp = ui.interact(r, Id::new("power"), Sense::click());
                             let hover = ui.ctx().animate_bool_with_time(resp.id, resp.hovered(), 0.2);
                             let r = r.expand(hover * 2.0);
-                            ui.painter().circle(r.center(), r.width() / 2.0, white(0.08 + 0.08 * hover), Stroke::new(1.0_f32, white(0.18)));
+                            ui.painter().circle(r.center(), r.width() / 2.0, lit(0.08 + 0.08 * hover), Stroke::new(1.0_f32, lit(0.18)));
                             let mut child = ui.new_child(UiBuilder::new().max_rect(Rect::from_center_size(c, Vec2::splat(30.0))));
-                            icons::line_icon(&mut child, "power", icons::POWER, 30.0, white(0.85), 2.0);
-                            ui.painter().text(Pos2::new(c.x, r.bottom() + 22.0), Align2::CENTER_TOP, "Power on", font(13.0, 400), white(0.5));
+                            icons::line_icon(&mut child, "power", icons::POWER, 30.0, lit(0.85), 2.0);
+                            ui.painter().text(Pos2::new(c.x, r.bottom() + 22.0), Align2::CENTER_TOP, "Power on", font(13.0, 400), lit(0.5));
                             if resp.hovered() {
                                 ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                             }
@@ -153,7 +162,7 @@ impl eframe::App for App {
                             ui.set_opacity(((age / 0.4).min(1.0)) as f32);
                             icons::logo_at(ui, logo);
                             let bar = Rect::from_center_size(Pos2::new(c.x, logo.bottom() + 44.0 + 2.5), Vec2::new(190.0f32.min(screen.width() * 0.6), 5.0));
-                            ui.painter().rect_filled(bar, 3.0, white(0.18 * fade_in));
+                            ui.painter().rect_filled(bar, 3.0, lit(0.18 * fade_in));
                             let t = (age / (boot_secs() - 0.6)).clamp(0.0, 1.0) as f32;
                             let frac = boot_progress(t);
                             if frac > 0.0 {
@@ -210,10 +219,10 @@ impl eframe::App for App {
                 let a = ((age - 1.2) / 0.6).clamp(0.0, 1.0) as f32;
                 if a > 0.0 {
                     let c = screen.center();
-                    ui.painter().circle_stroke(c, 13.5, Stroke::new(3.0_f32, white(0.18 * a)));
+                    ui.painter().circle_stroke(c, 13.5, Stroke::new(3.0_f32, lit(0.18 * a)));
                     let start = (now * std::f64::consts::TAU / 0.9) as f32;
                     let pts: Vec<Pos2> = (0..=16).map(|i| c + Vec2::angled(start + i as f32 / 16.0 * std::f32::consts::FRAC_PI_2) * 13.5).collect();
-                    ui.painter().add(egui::Shape::line(pts, Stroke::new(3.0_f32, white(0.85 * a))));
+                    ui.painter().add(egui::Shape::line(pts, Stroke::new(3.0_f32, lit(0.85 * a))));
                 }
             });
             ctx.move_to_top(egui::LayerId::new(egui::Order::Debug, Id::new("powerdown")));
@@ -260,9 +269,9 @@ impl eframe::App for App {
                 icons::logo_at(ui, logo);
                 let p = ui.painter();
                 p.text(Pos2::new(c.x, logo.bottom() + 26.0), Align2::CENTER_TOP, "Installing update", display(20.0, 700), WHITE);
-                p.text(Pos2::new(c.x, logo.bottom() + 56.0), Align2::CENTER_TOP, format!("Victoria Ambulance {version} · the app will restart"), font(13.0, 400), white(0.6));
+                p.text(Pos2::new(c.x, logo.bottom() + 56.0), Align2::CENTER_TOP, format!("Victoria Ambulance {version} · the app will restart"), font(13.0, 400), lit(0.6));
                 let bar = Rect::from_center_size(Pos2::new(c.x, logo.bottom() + 98.0), Vec2::new(190.0, 5.0));
-                p.rect_filled(bar, 3.0, white(0.18));
+                p.rect_filled(bar, 3.0, lit(0.18));
                 let t = ((age - 0.4) / (INSTALL_SECS - 0.4)).clamp(0.0, 1.0) as f32;
                 p.rect_filled(Rect::from_min_size(bar.min, Vec2::new(bar.width() * boot_progress(t), 5.0)), 3.0, WHITE);
             });
@@ -330,8 +339,8 @@ fn login_screen(ctx: &egui::Context, f: &mut LoginForm, now: f64) -> Option<Stri
         let big = if screen.height() <= 560.0 { 40.0 } else if screen.width() < 768.0 { 56.0 } else if screen.width() >= 1920.0 { 104.0 } else { 76.0 };
         let top = screen.top() + if screen.height() <= 560.0 { 16.0 } else { screen.height() * 0.07 };
         let p = ui.painter().clone();
-        let d = p.text(Pos2::new(screen.center().x, top), Align2::CENTER_TOP, crate::ui::format::long_date(local), font(18.0, 500), white(0.85));
-        p.text(Pos2::new(screen.center().x, d.bottom() + 2.0), Align2::CENTER_TOP, crate::ui::format::time(local), display(big, 700), white(0.85));
+        let d = p.text(Pos2::new(screen.center().x, top), Align2::CENTER_TOP, crate::ui::format::long_date(local), font(18.0, 500), lit(0.85));
+        p.text(Pos2::new(screen.center().x, d.bottom() + 2.0), Align2::CENTER_TOP, crate::ui::format::time(local), display(big, 700), lit(0.85));
 
         // Card
         let card_w = if screen.width() >= 1920.0 { 300.0 } else { 260.0f32.min(screen.width() - 40.0) };
@@ -360,7 +369,7 @@ fn login_screen(ctx: &egui::Context, f: &mut LoginForm, now: f64) -> Option<Stri
         if let Some((at, _)) = &f.loading {
             cu.add_space(14.0);
             let (bar, _) = cu.allocate_exact_size(Vec2::new(190.0, 5.0), Sense::hover());
-            p.rect_filled(bar, 3.0, white(0.18));
+            p.rect_filled(bar, 3.0, lit(0.18));
             let t = ((now - at) / (login_secs() - 0.3)).clamp(0.0, 1.0) as f32;
             p.rect_filled(Rect::from_min_size(bar.min, Vec2::new(bar.width() * boot_progress(t), 5.0)), 3.0, WHITE);
         } else {
@@ -380,7 +389,7 @@ fn login_screen(ctx: &egui::Context, f: &mut LoginForm, now: f64) -> Option<Stri
                 }
                 let go = Rect::from_center_size(Pos2::new(pr.rect.right() + 16.0 - 5.0 - 14.0, pr.rect.center().y), Vec2::splat(28.0));
                 let gr = cu.interact(go, Id::new("login-go"), Sense::click());
-                p.circle_filled(go.center(), 14.0, white(if gr.hovered() { 0.4 } else { 0.25 }));
+                p.circle_filled(go.center(), 14.0, lit(if gr.hovered() { 0.4 } else { 0.25 }));
                 let mut child = cu.new_child(UiBuilder::new().max_rect(Rect::from_center_size(go.center(), Vec2::splat(16.0))));
                 icons::line_icon(&mut child, "go", icons::ARROW, 16.0, WHITE, 2.4);
                 if gr.hovered() {
@@ -401,7 +410,7 @@ fn login_screen(ctx: &egui::Context, f: &mut LoginForm, now: f64) -> Option<Stri
             if f.account.is_some() && !f.resetting {
                 let g = cu.fonts(|fo| fo.layout_no_wrap("Forgot password?".into(), font(12.0, 400), WHITE));
                 let (lr, lresp) = cu.allocate_exact_size(g.size(), Sense::click());
-                p.galley(lr.min, g, if lresp.hovered() { WHITE } else { white(0.6) });
+                p.galley(lr.min, g, if lresp.hovered() { WHITE } else { lit(0.6) });
                 if lresp.hovered() {
                     cu.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                 }
@@ -410,7 +419,7 @@ fn login_screen(ctx: &egui::Context, f: &mut LoginForm, now: f64) -> Option<Stri
                 }
             }
             if f.resetting {
-                egui::Frame::NONE.fill(rgba(12, 28, 52, 0.9)).stroke(Stroke::new(1.0_f32, white(0.18))).corner_radius(CornerRadius::same(20)).inner_margin(egui::Margin::same(14)).show(&mut cu, |ui| {
+                egui::Frame::NONE.fill(rgba(12, 28, 52, 0.9)).stroke(Stroke::new(1.0_f32, lit(0.18))).corner_radius(CornerRadius::same(20)).inner_margin(egui::Margin::same(14)).show(&mut cu, |ui| {
                     ui.set_width(w - 28.0);
                     ui.vertical_centered(|ui| {
                         ui.add(egui::Label::new(egui::RichText::new("Remove the local account on this PC and set up a new one?").font(font(13.0, 400))).wrap());
@@ -460,7 +469,7 @@ fn login_screen(ctx: &egui::Context, f: &mut LoginForm, now: f64) -> Option<Stri
             }
         }
 
-        p.text(Pos2::new(screen.center().x, screen.bottom() - screen.height() * 0.04), Align2::CENTER_BOTTOM, "Local account · stored on this PC only", font(12.0, 400), white(0.5));
+        p.text(Pos2::new(screen.center().x, screen.bottom() - screen.height() * 0.04), Align2::CENTER_BOTTOM, "Local account · stored on this PC only", font(12.0, 400), lit(0.5));
         let _ = StrokeKind::Inside;
     });
     // Correct details: show the loading step, then hand over to the desktop.

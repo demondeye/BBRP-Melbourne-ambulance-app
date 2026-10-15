@@ -28,6 +28,8 @@ pub struct UserSettings {
     /// Colour shown around the picture when it doesn't cover the screen (Fit, Centre).
     #[serde(rename = "fillColor")]
     pub fill_color: [u8; 3],
+    /// Window look: "dark", "light" or "auto" (follow Windows).
+    pub appearance: String,
 }
 
 impl Default for Wallpaper {
@@ -37,7 +39,7 @@ impl Default for Wallpaper {
 }
 impl Default for UserSettings {
     fn default() -> Self {
-        Self { wallpaper: Wallpaper::default(), custom_image: None, api_key: None, fit: "fill".into(), fill_color: [13, 27, 46] }
+        Self { wallpaper: Wallpaper::default(), custom_image: None, api_key: None, fit: "fill".into(), fill_color: [13, 27, 46], appearance: "dark".into() }
     }
 }
 

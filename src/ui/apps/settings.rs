@@ -1,4 +1,5 @@
-//! Settings: a sidebar of sections and a content pane.
+//! Settings, laid out like macOS System Settings: a sidebar with search and
+//! coloured icons, back / forward arrows, and grouped rows on the right.
 
 use crate::core::{Core, ServerStatus};
 use crate::fieldguide::data::guide;
@@ -7,114 +8,131 @@ use crate::settings::{import_wallpaper, new_api_key, FILL_COLORS, FITS, WALLPAPE
 use crate::ui::icons;
 use crate::ui::theme::{self, *};
 use crate::ui::wallpaper;
-use eframe::egui::{self, Align, Align2, CornerRadius, Layout, Margin, Pos2, Rect, RichText, Sense, Stroke, StrokeKind, Ui, UiBuilder, Vec2};
+use eframe::egui::{self, Align, Align2, Color32, CornerRadius, Id, Layout, Margin, Pos2, Rect, RichText, Sense, Stroke, StrokeKind, Ui, UiBuilder, Vec2};
 
-#[derive(Default)]
 pub struct SettingsUi {
     pub current: usize,
+    back: Vec<usize>,
+    forward: Vec<usize>,
+    search: String,
     message: String,
     show_key: bool,
     confirming: bool,
     copied: Option<(String, f64)>,
 }
 
-// Add a settings section: write a pane function and add a line here.
-const SECTIONS: [(&str, [u8; 3], &str); 5] = [
-    ("Wallpaper", [0x2e, 0x7a, 0xb5], icons::WALLPAPER),
-    ("Stream Deck", [0x1f, 0x8a, 0x6c], icons::STREAMDECK),
-    ("Account", [0x5a, 0x6b, 0x85], icons::ACCOUNT),
-    ("Software Update", [0x17, 0x4f, 0x84], icons::UPDATE),
-    ("About", [0x1d, 0x0f, 0x5e], r#"<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>"#),
+impl Default for SettingsUi {
+    fn default() -> Self {
+        Self { current: WALLPAPER_SECTION, back: vec![], forward: vec![], search: String::new(), message: String::new(), show_key: false, confirming: false, copied: None }
+    }
+}
+
+impl SettingsUi {
+    /// Go to a section, remembering where we were (for the back arrow).
+    pub fn go(&mut self, section: usize) {
+        if section != self.current {
+            self.back.push(self.current);
+            self.forward.clear();
+            self.current = section;
+            self.message.clear();
+            self.confirming = false;
+        }
+    }
+}
+
+struct Section {
+    name: &'static str,
+    tint: [u8; 3],
+    icon: &'static str,
+    /// Extra words the search box matches.
+    keywords: &'static str,
+    /// Sidebar group (a gap is left between groups).
+    group: u8,
+}
+
+// Add a settings section: write a pane function, add a line here and to `pane()`.
+const SECTIONS: [Section; 6] = [
+    Section { name: "Account", tint: [0x5a, 0x6b, 0x85], icon: icons::ACCOUNT, keywords: "name user password local", group: 0 },
+    Section { name: "Appearance", tint: [0x1d, 0x1d, 0x1f], icon: r#"<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="white"/>"#, keywords: "dark light mode theme auto", group: 1 },
+    Section { name: "Wallpaper", tint: [0x2e, 0x7a, 0xb5], icon: icons::WALLPAPER, keywords: "background picture photo desktop fill fit stretch centre center tile colour color", group: 1 },
+    Section { name: "Stream Deck", tint: [0x1f, 0x8a, 0x6c], icon: icons::STREAMDECK, keywords: "api key keys address control", group: 2 },
+    Section { name: "Software Update", tint: [0x6b, 0x6b, 0x70], icon: icons::UPDATE, keywords: "update version install new", group: 3 },
+    Section { name: "About", tint: [0x1d, 0x0f, 0x5e], icon: r#"<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>"#, keywords: "version info", group: 3 },
 ];
 
+pub const ACCOUNT_SECTION: usize = 0;
+pub const WALLPAPER_SECTION: usize = 2;
 /// The Software Update section's place in the list.
-pub const UPDATE_SECTION: usize = 3;
+pub const UPDATE_SECTION: usize = 4;
+
+const TOOLBAR_H: f32 = 52.0;
 
 pub fn show(ui: &mut Ui, st: &mut SettingsUi, core: &mut Core, now: f64, radius: u8) {
     let rect = ui.max_rect();
-    let narrow = rect.width() <= 520.0;
+    let narrow = rect.width() <= 560.0;
     let name = core.user.clone().unwrap_or_default();
+    let side_w = if narrow { 0.0 } else { 220.0 };
+    let side = Rect::from_min_size(rect.min, Vec2::new(side_w, rect.height()));
+    let pane = Rect::from_min_max(Pos2::new(rect.left() + side_w, rect.top()), rect.max);
 
-    let (side, pane) = if narrow {
-        let side = Rect::from_min_size(rect.min, Vec2::new(rect.width(), 52.0));
-        (side, Rect::from_min_max(Pos2::new(rect.left(), side.bottom()), rect.max))
-    } else {
-        let side = Rect::from_min_size(rect.min, Vec2::new(200.0, rect.height()));
-        (side, Rect::from_min_max(Pos2::new(side.right(), rect.top()), rect.max))
-    };
-
-    // Sidebar
-    let p = ui.painter().clone();
-    p.rect_filled(side, CornerRadius { nw: 0, ne: 0, sw: if narrow { 0 } else { radius.saturating_sub(1) }, se: 0 }, rgba(0, 0, 0, 0.2));
-    if narrow {
-        p.hline(side.x_range(), side.bottom(), Stroke::new(1.0_f32, white(0.1)));
-    } else {
-        p.vline(side.right(), side.y_range(), Stroke::new(1.0_f32, white(0.1)));
-    }
-    let mut sb = ui.new_child(UiBuilder::new().max_rect(side.shrink2(Vec2::new(10.0, if narrow { 10.0 } else { 14.0 }))));
     if !narrow {
-        sb.horizontal(|ui| {
-            ui.add_space(8.0);
-            let (r, _) = ui.allocate_exact_size(Vec2::splat(38.0), Sense::hover());
-            ui.painter().circle_filled(r.center(), 19.0, WHITE);
-            let initial = name.chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default();
-            ui.painter().text(r.center(), Align2::CENTER_CENTER, initial, display(16.0, 800), ACCENT);
-            ui.vertical(|ui| {
-                ui.spacing_mut().item_spacing.y = 0.0;
-                ui.label(RichText::new(theme::elide(ui, &name, &font(14.0, 600), 110.0)).font(font(14.0, 600)));
-                ui.label(RichText::new("Local account").font(font(12.0, 400)).color(white(0.55)));
-            });
-        });
-        sb.add_space(6.0);
-        let y = sb.cursor().top();
-        sb.painter().hline(side.left() + 10.0..=side.right() - 10.0, y, Stroke::new(1.0_f32, white(0.1)));
-        sb.add_space(10.0);
+        sidebar(ui, st, core, side, radius, &name);
     }
-    let layout = if narrow { Layout::left_to_right(Align::Center) } else { Layout::top_down(Align::Min) };
-    sb.with_layout(layout, |ui| {
-        ui.spacing_mut().item_spacing = Vec2::new(2.0, 2.0);
-        for (i, (label, tint, icon)) in SECTIONS.iter().enumerate() {
-            let active = st.current == i;
-            let g = ui.fonts(|f| f.layout_no_wrap(label.to_string(), font(14.0, if active { 600 } else { 400 }), egui::Color32::PLACEHOLDER));
-            let w = if narrow { g.size().x + 50.0 } else { ui.available_width() };
-            let (r, resp) = ui.allocate_exact_size(Vec2::new(w, 36.0), Sense::click());
-            if active {
-                ui.painter().rect_filled(r, 8.0, WHITE);
+
+    // ── Toolbar: ‹ › and the section name ──
+    let bar = Rect::from_min_size(pane.min, Vec2::new(pane.width(), TOOLBAR_H));
+    let mut tb = ui.new_child(UiBuilder::new().max_rect(bar.shrink2(Vec2::new(16.0, 10.0))).layout(Layout::left_to_right(Align::Center)));
+    let pill = Rect::from_min_size(tb.cursor().min, Vec2::new(64.0, 30.0));
+    tb.painter().rect(pill, CornerRadius::same(15), group_bg(), Stroke::new(1.0_f32, white(0.12)), StrokeKind::Inside);
+    tb.painter().vline(pill.center().x, (pill.top() + 7.0)..=(pill.bottom() - 7.0), Stroke::new(1.0_f32, white(0.15)));
+    for (i, glyph) in ["‹", "›"].iter().enumerate() {
+        let r = Rect::from_min_size(pill.min + Vec2::new(i as f32 * 32.0, 0.0), Vec2::new(32.0, 30.0));
+        let enabled = if i == 0 { !st.back.is_empty() } else { !st.forward.is_empty() };
+        let resp = tb.interact(r, Id::new(("settings-nav", i)), if enabled { Sense::click() } else { Sense::hover() });
+        if enabled && resp.hovered() {
+            tb.painter().rect_filled(r.shrink(2.0), 13.0, white(0.1));
+        }
+        tb.painter().text(r.center() - Vec2::new(0.0, 2.0), Align2::CENTER_CENTER, glyph, font(22.0, 400), if enabled { ink() } else { white(0.3) });
+        if enabled && resp.clicked() {
+            if i == 0 {
+                let prev = st.back.pop().unwrap();
+                st.forward.push(st.current);
+                st.current = prev;
             } else {
-                theme::hover_fill(ui, &resp, r, 8, white(0.1));
-            }
-            let ir = Rect::from_min_size(Pos2::new(r.left() + 8.0, r.center().y - 12.0), Vec2::splat(24.0));
-            ui.painter().rect(ir, CornerRadius::same(7), rgb(*tint), Stroke::new(1.0_f32, white(0.25)), StrokeKind::Inside);
-            let mut child = ui.new_child(UiBuilder::new().max_rect(Rect::from_center_size(ir.center(), Vec2::splat(16.0))));
-            icons::line_icon(&mut child, label, icon, 16.0, WHITE, 2.0);
-            let text_right = ir.right() + 10.0 + g.size().x;
-            ui.painter().galley(Pos2::new(ir.right() + 10.0, r.center().y - g.size().y / 2.0), g, if active { ACCENT } else { WHITE });
-            // A badge on Software Update when a new version is waiting.
-            if i == UPDATE_SECTION && core.update.release().is_some() {
-                let c = if narrow { Pos2::new(r.right() - 10.0, r.top() + 8.0) } else { Pos2::new(r.right() - 14.0, r.center().y) };
-                let _ = text_right;
-                ui.painter().circle_filled(c, 9.0, egui::Color32::from_rgb(239, 68, 68));
-                ui.painter().text(c, Align2::CENTER_CENTER, "1", font(11.0, 700), WHITE);
-            }
-            if resp.clicked() {
-                st.current = i;
-                st.message.clear();
-                st.confirming = false;
+                let next = st.forward.pop().unwrap();
+                st.back.push(st.current);
+                st.current = next;
             }
         }
-    });
+    }
+    tb.add_space(76.0);
+    tb.label(RichText::new(SECTIONS[st.current].name).font(font(15.0, 600)));
+    if narrow {
+        // No sidebar in a small window: pick the section from a menu instead.
+        tb.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            egui::ComboBox::from_id_salt("settings-sections").selected_text("Sections").width(130.0).show_ui(ui, |ui| {
+                for (i, sec) in SECTIONS.iter().enumerate() {
+                    if ui.selectable_label(st.current == i, sec.name).clicked() {
+                        st.go(i);
+                    }
+                }
+            });
+        });
+    }
 
-    // Pane
-    let mut pn = ui.new_child(UiBuilder::new().max_rect(pane));
-    egui::ScrollArea::vertical().id_salt("settings-pane").auto_shrink([false, false]).show(&mut pn, |ui| {
-        egui::Frame::NONE.inner_margin(if narrow { Margin::same(16) } else { Margin::symmetric(24, 20) }).show(ui, |ui| {
+    // ── The section itself ──
+    let body = Rect::from_min_max(Pos2::new(pane.left(), bar.bottom()), pane.max);
+    let mut pn = ui.new_child(UiBuilder::new().max_rect(body));
+    pn.set_clip_rect(body.intersect(ui.clip_rect()));
+    egui::ScrollArea::vertical().id_salt(("settings-pane", st.current)).auto_shrink([false, false]).show(&mut pn, |ui| {
+        egui::Frame::NONE.inner_margin(Margin { left: 20, right: 20, top: 4, bottom: 24 }).show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.label(RichText::new(SECTIONS[st.current].0).font(display(26.0, 700)));
-            ui.add_space(8.0);
+            ui.spacing_mut().item_spacing.y = 8.0;
             match st.current {
-                0 => wallpaper_pane(ui, st, core, &name),
-                1 => streamdeck_pane(ui, st, core, now),
-                2 => account_pane(ui, &name),
+                ACCOUNT_SECTION => account_pane(ui, &name),
+                1 => appearance_pane(ui, core),
+                WALLPAPER_SECTION => wallpaper_pane(ui, st, core, &name),
+                3 => streamdeck_pane(ui, st, core, now),
                 UPDATE_SECTION => update_pane(ui, core),
                 _ => about_pane(ui),
             }
@@ -122,160 +140,387 @@ pub fn show(ui: &mut Ui, st: &mut SettingsUi, core: &mut Core, now: f64, radius:
     });
 }
 
-fn heading(ui: &mut Ui, text: &str) {
-    ui.add_space(12.0);
-    ui.label(RichText::new(text).font(font(13.0, 600)).color(white(0.6)));
-    ui.add_space(2.0);
-}
-fn note(ui: &mut Ui, text: &str) {
-    ui.add(egui::Label::new(RichText::new(text).font(font(12.0, 400)).color(white(0.5))).wrap());
-}
-
-fn wallpaper_pane(ui: &mut Ui, st: &mut SettingsUi, core: &mut Core, name: &str) {
-    let settings = core.settings.clone();
-    let using_image = settings.using_image();
-
-    // Preview
-    let w = ui.available_width().min(360.0);
-    let (r, _) = ui.allocate_exact_size(Vec2::new(w, w * 10.0 / 16.0), Sense::hover());
+fn sidebar(ui: &mut Ui, st: &mut SettingsUi, core: &Core, side: Rect, radius: u8, name: &str) {
     let p = ui.painter().clone();
-    theme::shadow(&p, r, 16, 10, 30, 0.3);
-    // A small copy of the screen, so real-size pictures (Centre, Tile) shrink to match.
-    let scale = r.width() / ui.ctx().screen_rect().width().max(1.0);
-    wallpaper::paint_scaled(ui, &p, r, &settings, true, 16, scale);
-    p.rect_stroke(r, CornerRadius::same(16), Stroke::new(1.0_f32, white(0.25)), StrokeKind::Inside);
-    let label = if using_image { "Your picture" } else { settings.preset().name };
-    let g = ui.fonts(|f| f.layout_no_wrap(label.into(), font(12.0, 400), WHITE));
-    let lr = Rect::from_min_size(Pos2::new(r.left() + 10.0, r.bottom() - 10.0 - g.size().y - 6.0), g.size() + Vec2::new(20.0, 6.0));
-    p.rect_filled(lr, CornerRadius::same(255), rgba(10, 20, 50, 0.7));
-    p.galley(lr.center() - g.size() / 2.0, g, WHITE);
+    p.rect_filled(side, CornerRadius { nw: 0, ne: 0, sw: radius.saturating_sub(1), se: 0 }, sidebar_bg());
+    p.vline(side.right(), side.y_range(), Stroke::new(1.0_f32, white(0.1)));
+    let mut sb = ui.new_child(UiBuilder::new().max_rect(side.shrink2(Vec2::new(10.0, 12.0))));
+    sb.set_clip_rect(side.intersect(ui.clip_rect()));
 
-    heading(ui, "Built-in");
-    let mut chosen = None;
-    thumb_grid(ui, WALLPAPERS.len(), |ui, i, r| {
-        let wp = &WALLPAPERS[i];
-        let selected = !using_image && settings.preset().id == wp.id;
-        let resp = ui.interact(r, egui::Id::new(("wp", i)), Sense::click());
-        thumb(ui, r, wp.name, selected, resp.hovered(), |ui, ir| wallpaper::paint_preset_rounded(ui.painter(), ir, wp, true, 10.0));
-        if resp.clicked() {
-            chosen = Some(wp.id);
+    // Search
+    let (sr, _) = sb.allocate_exact_size(Vec2::new(sb.available_width(), 28.0), Sense::hover());
+    sb.painter().rect(sr, CornerRadius::same(7), white(0.08), Stroke::NONE, StrokeKind::Inside);
+    let mut ic = sb.new_child(UiBuilder::new().max_rect(Rect::from_min_size(sr.min + Vec2::new(8.0, 7.0), Vec2::splat(14.0))));
+    icons::line_icon(&mut ic, "search", r#"<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/>"#, 14.0, white(0.5), 2.2);
+    let edit = egui::TextEdit::singleline(&mut st.search)
+        .id(Id::new("settings-search"))
+        .frame(false)
+        .font(font(13.0, 400))
+        .hint_text(RichText::new("Search").color(white(0.45)))
+        .margin(Vec2::ZERO);
+    sb.put(Rect::from_min_max(sr.min + Vec2::new(28.0, 6.0), sr.max - Vec2::new(8.0, 5.0)), edit);
+    sb.add_space(10.0);
+
+    let q = st.search.trim().to_lowercase();
+    let matches = |s: &Section| q.is_empty() || s.name.to_lowercase().contains(&q) || s.keywords.contains(&q);
+
+    // The user, at the top (opens Account), like a Mac's account card.
+    if q.is_empty() {
+        let (r, resp) = sb.allocate_exact_size(Vec2::new(sb.available_width(), 50.0), Sense::click());
+        let active = st.current == ACCOUNT_SECTION;
+        if active {
+            sb.painter().rect_filled(r, 8.0, select_blue());
+        } else {
+            theme::hover_fill(&sb, &resp, r, 8, white(0.08));
         }
-    });
-    if let Some(id) = chosen {
-        let mut s = settings.clone();
-        s.wallpaper = crate::settings::Wallpaper { kind: "preset".into(), id: Some(id.into()) };
-        core.save_settings(s);
+        let c = Pos2::new(r.left() + 6.0 + 18.0, r.center().y);
+        sb.painter().circle_filled(c, 18.0, if active { WHITE } else { rgb([0x5a, 0x6b, 0x85]) });
+        let initial = name.chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default();
+        sb.painter().text(c, Align2::CENTER_CENTER, initial, display(15.0, 800), if active { select_blue() } else { WHITE });
+        let tc = if active { WHITE } else { ink() };
+        let title = theme::elide(&sb, name, &font(13.5, 600), r.width() - 56.0);
+        sb.painter().text(Pos2::new(c.x + 26.0, r.center().y - 8.0), Align2::LEFT_CENTER, title, font(13.5, 600), tc);
+        sb.painter().text(Pos2::new(c.x + 26.0, r.center().y + 9.0), Align2::LEFT_CENTER, "Local account", font(11.5, 400), if active { lit(0.8) } else { white(0.55) });
+        if resp.clicked() {
+            st.go(ACCOUNT_SECTION);
+        }
+        sb.add_space(8.0);
     }
 
-    heading(ui, "Your picture");
-    if let Some(path) = settings.custom_image.clone() {
-        let mut use_it = false;
-        thumb_grid(ui, 1, |ui, _, r| {
-            let resp = ui.interact(r, egui::Id::new("wp-own"), Sense::click());
-            thumb(ui, r, "Your picture", using_image, resp.hovered(), |ui, ir| {
-                if !wallpaper::paint_image_cover_rounded(ui, ui.painter(), ir, &path, 10) {
-                    ui.painter().rect_filled(ir, 10.0, white(0.1));
+    egui::ScrollArea::vertical().id_salt("settings-side").auto_shrink([false, false]).show(&mut sb, |ui| {
+        ui.spacing_mut().item_spacing.y = 1.0;
+        let mut last_group = None;
+        let mut any = false;
+        for (i, sec) in SECTIONS.iter().enumerate() {
+            if (i == ACCOUNT_SECTION && q.is_empty()) || !matches(sec) {
+                continue;
+            }
+            any = true;
+            if last_group.is_some_and(|g| g != sec.group) {
+                ui.add_space(10.0);
+            }
+            last_group = Some(sec.group);
+            let active = st.current == i;
+            let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.0), Sense::click());
+            if active {
+                ui.painter().rect_filled(r, 7.0, select_blue());
+            } else {
+                theme::hover_fill(ui, &resp, r, 7, white(0.08));
+            }
+            let ir = Rect::from_min_size(Pos2::new(r.left() + 6.0, r.center().y - 11.0), Vec2::splat(22.0));
+            paint_icon_tile(ui, ir, sec.tint);
+            let mut child = ui.new_child(UiBuilder::new().max_rect(Rect::from_center_size(ir.center(), Vec2::splat(14.0))));
+            icons::line_icon(&mut child, sec.name, sec.icon, 14.0, WHITE, 2.2);
+            ui.painter().text(Pos2::new(ir.right() + 9.0, r.center().y), Align2::LEFT_CENTER, sec.name, font(13.5, 400), if active { WHITE } else { ink() });
+            // A badge on Software Update when a new version is waiting.
+            if i == UPDATE_SECTION && core.update.release().is_some() {
+                let c = Pos2::new(r.right() - 14.0, r.center().y);
+                ui.painter().circle_filled(c, 9.0, Color32::from_rgb(239, 68, 68));
+                ui.painter().text(c, Align2::CENTER_CENTER, "1", font(11.0, 700), WHITE);
+            }
+            if resp.clicked() {
+                st.go(i);
+            }
+        }
+        if !any {
+            ui.add_space(10.0);
+            ui.label(RichText::new("No results").font(font(13.0, 400)).color(white(0.5)));
+        }
+    });
+}
+
+/// A small rounded square in a colour, for sidebar icons (lighter at the top, like a Mac).
+fn paint_icon_tile(ui: &Ui, r: Rect, tint: [u8; 3]) {
+    wallpaper::gradient_rect(ui.painter(), r, 6.0, 180.0, theme::mix(tint, 0.75, [255, 255, 255], 1.0), rgb(tint));
+}
+
+// ── Grouped rows, Mac style ──────────────────────────────────────────────
+
+/// A titled group of rows in a rounded box.
+fn group(ui: &mut Ui, title: Option<&str>, rows: impl FnOnce(&mut Ui)) {
+    if let Some(t) = title {
+        ui.add_space(8.0);
+        ui.horizontal(|ui| {
+            ui.add_space(4.0);
+            ui.label(RichText::new(t).font(font(13.0, 600)));
+        });
+    }
+    egui::Frame::NONE
+        .fill(group_bg())
+        .stroke(Stroke::new(1.0_f32, white(0.1)))
+        .corner_radius(CornerRadius::same(10))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = 0.0;
+            rows(ui);
+        });
+}
+
+/// One row: a label on the left, `right` on the right. `first` rows get no line above.
+fn row(ui: &mut Ui, first: bool, label: &str, sub: Option<&str>, right: impl FnOnce(&mut Ui)) {
+    if !first {
+        let y = ui.cursor().top();
+        let x = ui.max_rect().x_range();
+        ui.painter().hline((x.min + 12.0)..=(x.max - 12.0), y, Stroke::new(1.0_f32, white(0.1)));
+    }
+    egui::Frame::NONE.inner_margin(Margin::symmetric(12, 9)).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.set_min_height(22.0);
+        ui.horizontal(|ui| {
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = 1.0;
+                ui.label(RichText::new(label).font(font(13.5, 400)));
+                if let Some(sub) = sub {
+                    ui.label(RichText::new(sub).font(font(11.5, 400)).color(white(0.55)));
                 }
             });
-            use_it = resp.clicked();
+            ui.with_layout(Layout::right_to_left(Align::Center), right);
         });
-        if use_it {
-            let mut s = settings.clone();
-            s.wallpaper.kind = "image".into();
-            core.save_settings(s);
-        }
+    });
+}
 
-        // How the picture fills the screen, like a Mac.
-        heading(ui, "Picture size");
-        let mut pick_fit: Option<&str> = None;
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
-            for (id, label) in FITS {
-                let on = using_image && settings.fit == id;
-                if fit_button(ui, id, label, on) {
-                    pick_fit = Some(id);
-                }
-            }
-        });
-        if let Some(id) = pick_fit {
-            let mut s = settings.clone();
-            s.fit = id.to_string();
-            s.wallpaper.kind = "image".into();
-            core.save_settings(s);
-        }
-        if matches!(settings.fit.as_str(), "fit" | "center") {
-            heading(ui, "Colour around the picture");
-            let mut pick_color = None;
-            ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing = Vec2::new(8.0, 8.0);
-                for c in FILL_COLORS {
-                    let (r, resp) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::click());
-                    ui.painter().circle_filled(r.center(), 13.0, rgb(c));
-                    let selected = settings.fill_color == c;
-                    ui.painter().circle_stroke(r.center(), if selected { 15.0 } else { 13.0 }, Stroke::new(if selected { 2.0_f32 } else { 1.0 }, if selected { WHITE } else { white(0.3) }));
+fn note(ui: &mut Ui, text: &str) {
+    ui.horizontal(|ui| {
+        ui.add_space(4.0);
+        ui.add(egui::Label::new(RichText::new(text).font(font(12.0, 400)).color(white(0.5))).wrap());
+    });
+}
+
+/// A small Mac-style push button ("Add Photo…").
+fn mac_button(ui: &mut Ui, label: &str) -> bool {
+    theme::button(ui, label, Btn::Glass, 13.0, None, Vec2::new(12.0, 5.0)).clicked()
+}
+
+// ── Appearance ────────────────────────────────────────────────────────────
+
+fn appearance_pane(ui: &mut Ui, core: &mut Core) {
+    let current = core.settings.appearance.clone();
+    let mut pick = None;
+    group(ui, None, |ui| {
+        row(ui, true, "Appearance", Some("Windows, menus and dialogs. The menu bar and dock stay on the wallpaper."), |_| {});
+        egui::Frame::NONE.inner_margin(Margin { left: 12, right: 12, top: 0, bottom: 14 }).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 18.0;
+                for (id, label) in [("auto", "Auto"), ("light", "Light"), ("dark", "Dark")] {
+                    let (r, resp) = ui.allocate_exact_size(Vec2::new(96.0, 92.0), Sense::click());
+                    let on = current == id;
+                    let shot = Rect::from_min_size(r.min + Vec2::new(4.0, 4.0), Vec2::new(88.0, 58.0));
+                    // A tiny window in that look (Auto is half and half).
+                    let draw = |p: &egui::Painter, rect: Rect, light: bool| {
+                        let (bg, side, bar) = if light {
+                            (Color32::from_rgb(244, 244, 246), Color32::from_rgb(222, 222, 228), Color32::from_rgb(0, 122, 255))
+                        } else {
+                            (Color32::from_rgb(20, 43, 72), Color32::from_rgb(14, 30, 52), Color32::from_rgb(10, 108, 216))
+                        };
+                        p.rect_filled(rect, 4.0, bg);
+                        p.rect_filled(Rect::from_min_size(rect.min, Vec2::new(rect.width() * 0.3, rect.height())), CornerRadius { nw: 4, sw: 4, ne: 0, se: 0 }, side);
+                        p.rect_filled(Rect::from_min_size(rect.min + Vec2::new(rect.width() * 0.38, 10.0), Vec2::new(rect.width() * 0.5, 6.0)), 3.0, bar);
+                    };
+                    let p = ui.painter().clone();
+                    wallpaper::paint_preset_rounded(&p, shot, &WALLPAPERS[0], true, 8.0);
+                    let win = shot.shrink2(Vec2::new(12.0, 10.0));
+                    match id {
+                        "auto" => {
+                            draw(&p.with_clip_rect(Rect::from_min_max(win.min, Pos2::new(win.center().x, win.bottom()))), win, true);
+                            draw(&p.with_clip_rect(Rect::from_min_max(Pos2::new(win.center().x, win.top()), win.max)), win, false);
+                        }
+                        "light" => draw(&p, win, true),
+                        _ => draw(&p, win, false),
+                    }
+                    p.rect_stroke(shot, CornerRadius::same(8), Stroke::new(if on { 3.0_f32 } else { 1.0 }, if on { select_blue() } else { white(0.2) }), StrokeKind::Outside);
+                    p.text(Pos2::new(r.center().x, shot.bottom() + 10.0), Align2::CENTER_TOP, label, font(12.5, if on { 600 } else { 400 }), ink());
                     if resp.hovered() {
                         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                     }
                     if resp.clicked() {
-                        pick_color = Some(c);
+                        pick = Some(id);
                     }
-                }
-                // Any other colour
-                let mut custom = settings.fill_color;
-                if ui.color_edit_button_srgb(&mut custom).changed() {
-                    pick_color = Some(custom);
                 }
             });
-            if let Some(c) = pick_color {
-                let mut s = settings.clone();
-                s.fill_color = c;
-                core.save_settings(s);
-            }
-        }
+        });
+    });
+    note(ui, "Auto follows the light or dark setting in Windows.");
+    if let Some(id) = pick {
+        let mut s = core.settings.clone();
+        s.appearance = id.to_string();
+        core.save_settings(s);
     }
-    ui.add_space(8.0);
-    ui.horizontal_wrapped(|ui| {
-        let label = if settings.custom_image.is_some() { "Choose another…" } else { "Choose a picture…" };
-        if theme::button(ui, label, Btn::Glass, 13.0, None, Vec2::new(18.0, 8.0)).clicked() {
-            st.message.clear();
-            let file = rfd::FileDialog::new().set_title("Choose a picture").add_filter("Pictures", &["png", "jpg", "jpeg", "gif", "bmp", "webp"]).pick_file();
-            if let Some(file) = file {
-                match import_wallpaper(name, &file) {
-                    Ok(path) => {
+}
+
+// ── Wallpaper ─────────────────────────────────────────────────────────────
+
+fn wallpaper_pane(ui: &mut Ui, st: &mut SettingsUi, core: &mut Core, name: &str) {
+    let settings = core.settings.clone();
+    let using_image = settings.using_image();
+    let mut new_settings: Option<crate::settings::UserSettings> = None;
+    let mut add_photo = false;
+
+    // Top: the current wallpaper next to its options, like a Mac.
+    ui.horizontal_top(|ui| {
+        ui.spacing_mut().item_spacing.x = 14.0;
+        let pw = 176.0;
+        let (r, _) = ui.allocate_exact_size(Vec2::new(pw, pw * 10.0 / 16.0), Sense::hover());
+        let p = ui.painter().clone();
+        theme::shadow(&p, r, 8, 4, 12, 0.25);
+        let scale = r.width() / ui.ctx().screen_rect().width().max(1.0);
+        wallpaper::paint_scaled(ui, &p, r, &settings, true, 8, scale);
+        p.rect_stroke(r, CornerRadius::same(8), Stroke::new(1.0_f32, white(0.15)), StrokeKind::Outside);
+
+        ui.vertical(|ui| {
+            ui.set_width(ui.available_width());
+            group(ui, None, |ui| {
+                let label = if using_image { "Your picture" } else { settings.preset().name };
+                row(ui, true, label, None, |ui| {
+                    if using_image {
+                        let current = FITS.iter().find(|(id, _)| *id == settings.fit).map_or("Fill Screen", |f| f.1);
+                        egui::ComboBox::from_id_salt("wallpaper-fit").selected_text(current).width(140.0).show_ui(ui, |ui| {
+                            for (id, label) in FITS {
+                                if ui.selectable_label(settings.fit == id, label).clicked() {
+                                    let mut s = settings.clone();
+                                    s.fit = id.to_string();
+                                    new_settings = Some(s);
+                                }
+                            }
+                        });
+                    } else {
+                        ui.label(RichText::new("Fill Screen").font(font(13.0, 400)).color(white(0.45)));
+                    }
+                });
+                if using_image && matches!(settings.fit.as_str(), "fit" | "center") {
+                    row(ui, false, "Colour around picture", None, |_| {});
+                    egui::Frame::NONE.inner_margin(Margin { left: 12, right: 12, top: 0, bottom: 10 }).show(ui, |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.spacing_mut().item_spacing.x = 6.0;
+                            for c in FILL_COLORS.iter() {
+                                let (r, resp) = ui.allocate_exact_size(Vec2::splat(20.0), Sense::click());
+                                ui.painter().circle_filled(r.center(), 8.5, rgb(*c));
+                                let on = settings.fill_color == *c;
+                                ui.painter().circle_stroke(r.center(), if on { 10.0 } else { 8.5 }, Stroke::new(if on { 2.0_f32 } else { 1.0 }, if on { select_blue() } else { white(0.25) }));
+                                if resp.hovered() {
+                                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                                }
+                                if resp.clicked() {
+                                    let mut s = settings.clone();
+                                    s.fill_color = *c;
+                                    new_settings = Some(s);
+                                }
+                            }
+                            // Any other colour
+                            let mut custom = settings.fill_color;
+                            if ui.color_edit_button_srgb(&mut custom).on_hover_text("Other colour").changed() {
+                                let mut s = settings.clone();
+                                s.fill_color = custom;
+                                new_settings = Some(s);
+                            }
+                        });
+                    });
+                }
+            });
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if settings.custom_image.is_some() && mac_button(ui, "Remove Photo") {
                         let mut s = settings.clone();
-                        if let Some(old) = &s.custom_image {
+                        if let Some(old) = s.custom_image.take() {
                             let _ = std::fs::remove_file(old);
                         }
-                        s.custom_image = Some(path);
-                        s.wallpaper.kind = "image".into();
-                        if !core.save_settings(s) {
-                            st.message = "That picture couldn't be saved on this PC.".into();
-                        }
+                        s.wallpaper.kind = "preset".into();
+                        new_settings = Some(s);
                     }
-                    Err(e) => st.message = e,
-                }
-            }
-        }
-        if settings.custom_image.is_some() && theme::button(ui, "Remove picture", Btn::Danger, 13.0, None, Vec2::new(18.0, 8.0)).clicked() {
-            let mut s = settings.clone();
-            if let Some(old) = s.custom_image.take() {
-                let _ = std::fs::remove_file(old);
-            }
-            s.wallpaper.kind = "preset".into();
-            core.save_settings(s);
-        }
+                    if mac_button(ui, "Add Photo…") {
+                        add_photo = true;
+                    }
+                });
+            });
+        });
     });
     if !st.message.is_empty() {
-        ui.label(RichText::new(&st.message).font(font(13.0, 400)).color(RED_TEXT));
+        ui.label(RichText::new(&st.message).font(font(13.0, 400)).color(red_text()));
     }
-    ui.add_space(4.0);
+
+    // Built-in wallpapers
+    section_header(ui, "Built-in Wallpapers");
+    thumb_grid(ui, WALLPAPERS.len(), |ui, i, r| {
+        let wp = &WALLPAPERS[i];
+        let selected = !using_image && settings.preset().id == wp.id;
+        let resp = ui.interact(r, Id::new(("wp", i)), Sense::click());
+        thumb(ui, r, wp.name, selected, resp.hovered(), |ui, ir| wallpaper::paint_preset_rounded(ui.painter(), ir, wp, true, 8.0));
+        if resp.clicked() {
+            let mut s = settings.clone();
+            s.wallpaper = crate::settings::Wallpaper { kind: "preset".into(), id: Some(wp.id.into()) };
+            new_settings = Some(s);
+        }
+    });
+
+    // Your photos: an "Add Photo…" tile, then the user's picture.
+    section_header(ui, "Your Photos");
+    let own = settings.custom_image.clone();
+    let count = 1 + own.is_some() as usize;
+    thumb_grid(ui, count, |ui, i, r| {
+        let resp = ui.interact(r, Id::new(("wp-own", i)), Sense::click());
+        if i == 0 {
+            thumb(ui, r, "Add Photo…", false, resp.hovered(), |ui, ir| {
+                ui.painter().rect_filled(ir, 8.0, white(if resp.hovered() { 0.1 } else { 0.06 }));
+                let mut ic = ui.new_child(UiBuilder::new().max_rect(Rect::from_center_size(ir.center(), Vec2::splat(26.0))));
+                icons::line_icon(&mut ic, "add-photo", r#"<rect x="3" y="5" width="15" height="13" rx="2"/><path d="M3 15l4-4 3 3 2-2 6 6M19 3v6M16 6h6"/>"#, 26.0, white(0.5), 1.8);
+            });
+            if resp.clicked() {
+                add_photo = true;
+            }
+        } else if let Some(path) = &own {
+            thumb(ui, r, "Your picture", using_image, resp.hovered(), |ui, ir| {
+                if !wallpaper::paint_image_cover_rounded(ui, ui.painter(), ir, path, 8) {
+                    ui.painter().rect_filled(ir, 8.0, white(0.1));
+                }
+            });
+            if resp.clicked() {
+                let mut s = settings.clone();
+                s.wallpaper.kind = "image".into();
+                new_settings = Some(s);
+            }
+        }
+    });
+    ui.add_space(6.0);
     note(ui, &format!("Saved for {name} on this PC. It will move to the database when that's connected."));
+
+    if add_photo {
+        st.message.clear();
+        let file = rfd::FileDialog::new().set_title("Choose a picture").add_filter("Pictures", &["png", "jpg", "jpeg", "gif", "bmp", "webp"]).pick_file();
+        if let Some(file) = file {
+            match import_wallpaper(name, &file) {
+                Ok(path) => {
+                    let mut s = new_settings.take().unwrap_or_else(|| settings.clone());
+                    if let Some(old) = &s.custom_image {
+                        let _ = std::fs::remove_file(old);
+                    }
+                    s.custom_image = Some(path);
+                    s.wallpaper.kind = "image".into();
+                    new_settings = Some(s);
+                }
+                Err(e) => st.message = e,
+            }
+        }
+    }
+    if let Some(s) = new_settings {
+        if !core.save_settings(s) {
+            st.message = "That couldn't be saved on this PC.".into();
+        }
+    }
+}
+
+fn section_header(ui: &mut Ui, title: &str) {
+    ui.add_space(12.0);
+    ui.horizontal(|ui| {
+        ui.add_space(2.0);
+        ui.label(RichText::new(title).font(font(13.5, 600)));
+    });
+    ui.add_space(2.0);
 }
 
 fn thumb_grid(ui: &mut Ui, count: usize, mut cell: impl FnMut(&mut Ui, usize, Rect)) {
     let gap = 12.0;
     let avail = ui.available_width();
-    let cols = ((avail + gap) / (104.0 + gap)).floor().max(1.0) as usize;
+    let cols = ((avail + gap) / (118.0 + gap)).floor().clamp(1.0, 5.0) as usize;
     let w = (avail - gap * (cols as f32 - 1.0)) / cols as f32;
     let h = w * 10.0 / 16.0 + 6.0 + 16.0;
     let rows = count.div_ceil(cols);
@@ -288,16 +533,15 @@ fn thumb_grid(ui: &mut Ui, count: usize, mut cell: impl FnMut(&mut Ui, usize, Re
 }
 
 fn thumb(ui: &mut Ui, r: Rect, label: &str, selected: bool, hovered: bool, paint: impl FnOnce(&mut Ui, Rect)) {
-    let lift = if hovered { 1.0 } else { 0.0 };
-    let ir = Rect::from_min_size(r.min - Vec2::new(0.0, lift), Vec2::new(r.width(), r.width() * 10.0 / 16.0));
+    let ir = Rect::from_min_size(r.min, Vec2::new(r.width(), r.width() * 10.0 / 16.0));
     paint(ui, ir);
     let p = ui.painter();
     if selected {
-        p.rect_stroke(ir, CornerRadius::same(10), Stroke::new(2.0_f32, WHITE), StrokeKind::Inside);
+        p.rect_stroke(ir.expand(1.0), CornerRadius::same(9), Stroke::new(3.0_f32, select_blue()), StrokeKind::Outside);
     } else {
-        p.rect_stroke(ir, CornerRadius::same(10), Stroke::new(1.0_f32, white(0.2)), StrokeKind::Outside);
+        p.rect_stroke(ir, CornerRadius::same(8), Stroke::new(1.0_f32, white(if hovered { 0.35 } else { 0.15 })), StrokeKind::Outside);
     }
-    p.text(Pos2::new(r.center().x, ir.bottom() + 6.0), Align2::CENTER_TOP, label, font(12.0, if selected { 600 } else { 400 }), if selected { WHITE } else { white(0.75) });
+    p.text(Pos2::new(r.center().x, ir.bottom() + 6.0), Align2::CENTER_TOP, label, font(12.0, 400), if selected { ink() } else { white(0.75) });
     if hovered {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
@@ -319,13 +563,13 @@ fn streamdeck_pane(ui: &mut Ui, st: &mut SettingsUi, core: &mut Core, now: f64) 
     let key = core.settings.api_key.clone().unwrap_or_default();
     ui.add(egui::Label::new(RichText::new("Each Stream Deck key calls a web address. Every address ends with your personal API key, so the keys only control your own Field Guide and Time Clock.").font(font(14.0, 400)).color(white(0.75))).wrap());
 
-    heading(ui, "Your API key");
+    section_header(ui, "Your API key");
     let connected = core.server == ServerStatus::Running;
-    egui::Frame::NONE.fill(white(0.1)).stroke(Stroke::new(1.0_f32, white(0.18))).corner_radius(CornerRadius::same(14)).inner_margin(Margin::symmetric(16, 12)).show(ui, |ui| {
+    egui::Frame::NONE.fill(group_bg()).stroke(Stroke::new(1.0_f32, white(0.1))).corner_radius(CornerRadius::same(10)).inner_margin(Margin::symmetric(16, 12)).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.horizontal_wrapped(|ui| {
             let shown = if st.show_key { key.clone() } else { format!("{}{}", &key[..key.len().min(6)], "•".repeat(18)) };
-            ui.label(RichText::new(shown).font(mono(12.5)).color(WHITE));
+            ui.label(RichText::new(shown).font(mono(12.5)).color(ink()));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let text = if connected { "Connected" } else { "Not connected" };
                 ui.label(RichText::new(text).font(font(12.0, 400)));
@@ -335,7 +579,7 @@ fn streamdeck_pane(ui: &mut Ui, st: &mut SettingsUi, core: &mut Core, now: f64) 
         });
     });
     if let ServerStatus::Failed(msg) = &core.server {
-        ui.label(RichText::new(msg).font(font(13.0, 400)).color(RED_TEXT));
+        ui.label(RichText::new(msg).font(font(13.0, 400)).color(red_text()));
     }
     ui.add_space(6.0);
     ui.horizontal_wrapped(|ui| {
@@ -358,11 +602,11 @@ fn streamdeck_pane(ui: &mut Ui, st: &mut SettingsUi, core: &mut Core, now: f64) 
         }
     });
     if st.confirming {
-        ui.label(RichText::new("A new key stops every Stream Deck key set up with the old one.").font(font(13.0, 400)).color(RED_TEXT));
+        ui.label(RichText::new("A new key stops every Stream Deck key set up with the old one.").font(font(13.0, 400)).color(red_text()));
     }
     note(ui, "Keep this key to yourself. Anyone who has it can control your Field Guide.");
 
-    heading(ui, "Addresses for your keys");
+    section_header(ui, "Addresses for your keys");
     note(ui, "In the Stream Deck app, add a \"Website\" action, paste an address, and tick \"GET request in background\". Sending a key opens the Field Guide if it's closed. Victoria Ambulance has to be open for the keys to work.");
     ui.add_space(6.0);
 
@@ -384,7 +628,7 @@ fn streamdeck_pane(ui: &mut Ui, st: &mut SettingsUi, core: &mut Core, now: f64) 
     for p in guide().pages.iter().filter(|p| p.id != "home") {
         commands.push((format!("Open: {}", p.title), format!("fieldguide/open/{}", p.id)));
     }
-    egui::Frame::NONE.fill(white(0.1)).stroke(Stroke::new(1.0_f32, white(0.18))).corner_radius(CornerRadius::same(14)).show(ui, |ui| {
+    egui::Frame::NONE.fill(group_bg()).stroke(Stroke::new(1.0_f32, white(0.1))).corner_radius(CornerRadius::same(10)).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.spacing_mut().item_spacing.y = 0.0;
         for (i, (label, path)) in commands.iter().enumerate() {
@@ -413,7 +657,7 @@ fn streamdeck_pane(ui: &mut Ui, st: &mut SettingsUi, core: &mut Core, now: f64) 
 
 fn account_pane(ui: &mut Ui, name: &str) {
     let rows = [("Name", name.to_string()), ("Account type", "Local".into()), ("Stored", "This PC only".into())];
-    egui::Frame::NONE.fill(white(0.1)).stroke(Stroke::new(1.0_f32, white(0.18))).corner_radius(CornerRadius::same(14)).show(ui, |ui| {
+    egui::Frame::NONE.fill(group_bg()).stroke(Stroke::new(1.0_f32, white(0.1))).corner_radius(CornerRadius::same(10)).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.spacing_mut().item_spacing.y = 0.0;
         for (i, (k, v)) in rows.iter().enumerate() {
@@ -455,7 +699,7 @@ fn update_pane(ui: &mut Ui, core: &mut Core) {
     use crate::update::{UpdateStatus, CURRENT, UPDATE_REPO};
 
     // This version
-    egui::Frame::NONE.fill(white(0.1)).stroke(Stroke::new(1.0_f32, white(0.18))).corner_radius(CornerRadius::same(14)).inner_margin(Margin::symmetric(16, 14)).show(ui, |ui| {
+    egui::Frame::NONE.fill(group_bg()).stroke(Stroke::new(1.0_f32, white(0.1))).corner_radius(CornerRadius::same(10)).inner_margin(Margin::symmetric(16, 14)).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.horizontal(|ui| {
             icons::logo(ui, 40.0);
@@ -471,7 +715,7 @@ fn update_pane(ui: &mut Ui, core: &mut Core) {
 
     // Status
     let status = core.update.clone();
-    egui::Frame::NONE.fill(white(0.1)).stroke(Stroke::new(1.0_f32, white(0.18))).corner_radius(CornerRadius::same(14)).inner_margin(Margin::symmetric(16, 14)).show(ui, |ui| {
+    egui::Frame::NONE.fill(group_bg()).stroke(Stroke::new(1.0_f32, white(0.1))).corner_radius(CornerRadius::same(10)).inner_margin(Margin::symmetric(16, 14)).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.spacing_mut().item_spacing.y = 6.0;
         match &status {
@@ -486,7 +730,7 @@ fn update_pane(ui: &mut Ui, core: &mut Core) {
             }
             UpdateStatus::Checking => {
                 ui.horizontal(|ui| {
-                    ui.add(egui::Spinner::new().size(14.0).color(WHITE));
+                    ui.add(egui::Spinner::new().size(14.0).color(ink()));
                     ui.label(RichText::new("Checking for updates…").font(font(14.0, 600)));
                 });
             }
@@ -496,7 +740,7 @@ fn update_pane(ui: &mut Ui, core: &mut Core) {
                 if !r.notes.is_empty() {
                     ui.add_space(4.0);
                     ui.label(RichText::new("What's new").font(font(13.0, 600)).color(white(0.6)));
-                    egui::Frame::NONE.fill(rgba(0, 0, 0, 0.18)).corner_radius(CornerRadius::same(10)).inner_margin(Margin::same(10)).show(ui, |ui| {
+                    egui::Frame::NONE.fill(white(0.06)).corner_radius(CornerRadius::same(10)).inner_margin(Margin::same(10)).show(ui, |ui| {
                         ui.set_width(ui.available_width());
                         ui.add(egui::Label::new(RichText::new(clean_notes(&r.notes)).font(font(13.0, 400))).wrap());
                     });
@@ -514,7 +758,7 @@ fn update_pane(ui: &mut Ui, core: &mut Core) {
             }
             UpdateStatus::Failed(e) => {
                 ui.label(RichText::new("The update didn't work").font(font(15.0, 600)));
-                ui.add(egui::Label::new(RichText::new(e).font(font(13.0, 400)).color(RED_TEXT)).wrap());
+                ui.add(egui::Label::new(RichText::new(e).font(font(13.0, 400)).color(red_text())).wrap());
             }
         }
     });
@@ -544,7 +788,7 @@ fn progress(ui: &mut Ui, frac: f32, label: &str) {
     ui.label(RichText::new(label).font(font(13.0, 500)));
     let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width().min(320.0), 6.0), Sense::hover());
     ui.painter().rect_filled(r, 3.0, white(0.18));
-    ui.painter().rect_filled(Rect::from_min_size(r.min, Vec2::new(r.width() * frac.clamp(0.0, 1.0), 6.0)), 3.0, WHITE);
+    ui.painter().rect_filled(Rect::from_min_size(r.min, Vec2::new(r.width() * frac.clamp(0.0, 1.0), 6.0)), 3.0, select_blue());
 }
 
 /// Release notes are written in Markdown on GitHub; show them as plain text.
@@ -563,46 +807,3 @@ pub fn clean_notes(notes: &str) -> String {
         .to_string()
 }
 
-/// One of the picture size choices: a little drawing of the option and its name.
-fn fit_button(ui: &mut Ui, id: &str, label: &str, on: bool) -> bool {
-    let (r, resp) = ui.allocate_exact_size(Vec2::new(92.0, 78.0), Sense::click());
-    let hover = resp.hovered();
-    let p = ui.painter();
-    p.rect(r, CornerRadius::same(12), if on { WHITE } else if hover { white(0.16) } else { white(0.08) }, Stroke::new(1.0_f32, if on { WHITE } else { white(0.18) }), StrokeKind::Inside);
-    // The "screen" and the picture inside it
-    let screen = Rect::from_center_size(Pos2::new(r.center().x, r.top() + 26.0), Vec2::new(46.0, 30.0));
-    let ink = if on { ACCENT } else { WHITE };
-    let pic = rgba(162, 203, 237, if on { 0.9 } else { 0.55 });
-    p.rect_filled(screen, 3.0, if on { rgba(29, 15, 94, 0.12) } else { white(0.08) });
-    match id {
-        "fill" => {
-            p.rect_filled(screen.expand2(Vec2::new(4.0, 0.0)).intersect(screen), 3.0, pic);
-        }
-        "fit" => {
-            p.rect_filled(Rect::from_center_size(screen.center(), Vec2::new(30.0, 30.0)), 0.0, pic);
-        }
-        "stretch" => {
-            p.rect_filled(screen, 3.0, pic);
-            let c = screen.center();
-            p.arrow(c, Vec2::new(14.0, 0.0), Stroke::new(1.5_f32, ink));
-            p.arrow(c, Vec2::new(-14.0, 0.0), Stroke::new(1.5_f32, ink));
-        }
-        "center" => {
-            p.rect_filled(Rect::from_center_size(screen.center(), Vec2::new(18.0, 12.0)), 0.0, pic);
-        }
-        _ => {
-            for i in 0..4 {
-                for j in 0..3 {
-                    let t = Rect::from_min_size(screen.min + Vec2::new(1.0 + i as f32 * 11.25, 1.0 + j as f32 * 9.5), Vec2::new(10.0, 8.5));
-                    p.rect_filled(t, 1.0, pic);
-                }
-            }
-        }
-    }
-    p.rect_stroke(screen, 3.0, Stroke::new(1.0_f32, if on { rgba(29, 15, 94, 0.5) } else { white(0.35) }), StrokeKind::Outside);
-    p.text(Pos2::new(r.center().x, r.bottom() - 10.0), Align2::CENTER_BOTTOM, label, font(12.0, if on { 600 } else { 400 }), ink);
-    if hover {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
-    resp.clicked()
-}

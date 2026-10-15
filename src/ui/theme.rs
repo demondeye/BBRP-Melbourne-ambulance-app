@@ -13,6 +13,71 @@ pub const RED_TEXT: Color32 = Color32::from_rgb(0xfc, 0xa5, 0xa5);
 pub const GREEN: Color32 = Color32::from_rgb(0x6e, 0xe7, 0xa0);
 
 pub const MENUBAR_H: f32 = 30.0;
+
+// ── Light / dark mode ─────────────────────────────────────────────────────
+// Windows, menus and dialogs follow the user's Appearance setting. Things that
+// sit on the wallpaper (menu bar, dock, login, boot) use `lit()` and stay white.
+
+static LIGHT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn is_light() -> bool {
+    LIGHT.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Switch the look; restyles egui's own widgets (text boxes, dropdowns) too.
+pub fn set_light(ctx: &egui::Context, light: bool) {
+    if is_light() == light && ctx.style().visuals.dark_mode != light {
+        return;
+    }
+    LIGHT.store(light, std::sync::atomic::Ordering::Relaxed);
+    install_style(ctx);
+}
+
+/// Main text colour.
+pub fn ink() -> Color32 {
+    if is_light() { Color32::from_rgb(0x1d, 0x1d, 0x1f) } else { WHITE }
+}
+/// Literal white at an alpha (for things drawn over the wallpaper).
+pub fn lit(a: f32) -> Color32 {
+    rgba(255, 255, 255, a)
+}
+/// Window background.
+pub fn window_bg() -> Color32 {
+    if is_light() { Color32::from_rgb(0xf4, 0xf4, 0xf6) } else { Color32::from_rgb(20, 43, 72) }
+}
+/// Sidebars and title bars.
+pub fn sidebar_bg() -> Color32 {
+    if is_light() { Color32::from_rgb(0xe8, 0xe8, 0xec) } else { rgba(0, 0, 0, 0.2) }
+}
+/// Menus, popups and dialogs.
+pub fn menu_bg() -> Color32 {
+    if is_light() { rgba(250, 250, 252, 0.98) } else { rgba(10, 20, 50, 0.95) }
+}
+/// Grouped boxes (Mac "inset grouped" rows).
+pub fn group_bg() -> Color32 {
+    if is_light() { WHITE } else { lit(0.07) }
+}
+/// Content cards inside windows (white in light mode, faint glass in dark).
+pub fn card_fill() -> Color32 {
+    if is_light() { WHITE } else { lit(0.1) }
+}
+/// Mac-style selection blue.
+pub fn select_blue() -> Color32 {
+    if is_light() { Color32::from_rgb(0x00, 0x7a, 0xff) } else { Color32::from_rgb(0x0a, 0x6c, 0xd8) }
+}
+pub fn red_text() -> Color32 {
+    if is_light() { Color32::from_rgb(0xd7, 0x2c, 0x2c) } else { RED_TEXT }
+}
+pub fn ice_text() -> Color32 {
+    if is_light() { Color32::from_rgb(0x0a, 0x5c, 0xc0) } else { ICE }
+}
+/// A page accent colour used for text: darkened in light mode so it stays readable.
+pub fn accent_text(c: [u8; 3]) -> Color32 {
+    if is_light() { lerp_color(rgb(c), Color32::BLACK, 0.4) } else { rgb(c) }
+}
+pub fn green() -> Color32 {
+    if is_light() { Color32::from_rgb(0x22, 0xa8, 0x55) } else { GREEN }
+}
 pub const RADIUS_CARD: u8 = 24;
 pub const RADIUS_WINDOW: u8 = 14;
 
@@ -32,8 +97,10 @@ pub fn unmul(c: Color32) -> [u8; 4] {
     let u = |v: u8| ((v as f32 * 255.0 / a as f32).round()).min(255.0) as u8;
     [u(c.r()), u(c.g()), u(c.b()), a]
 }
+/// The main text colour at an alpha: white in dark mode, near-black in light mode.
+/// Used for faint fills, borders and secondary text inside windows.
 pub fn white(a: f32) -> Color32 {
-    rgba(255, 255, 255, a)
+    if is_light() { rgba(0, 0, 0, a * 0.62) } else { rgba(255, 255, 255, a) }
 }
 pub fn rgb(c: [u8; 3]) -> Color32 {
     Color32::from_rgb(c[0], c[1], c[2])
@@ -118,31 +185,41 @@ pub fn mono(size: f32) -> FontId {
 }
 
 pub fn install_style(ctx: &egui::Context) {
-    // Always the dark glass look, even when Windows itself is set to light mode.
-    ctx.set_theme(egui::Theme::Dark);
+    let light = is_light();
+    ctx.set_theme(if light { egui::Theme::Light } else { egui::Theme::Dark });
     ctx.all_styles_mut(|s| {
-        s.visuals = egui::Visuals::dark();
-        s.visuals.override_text_color = Some(WHITE);
+        s.visuals = if light { egui::Visuals::light() } else { egui::Visuals::dark() };
+        s.visuals.override_text_color = Some(ink());
         s.visuals.panel_fill = Color32::from_rgb(5, 13, 24);
-        s.visuals.window_fill = Color32::from_rgb(12, 28, 52);
+        s.visuals.window_fill = window_bg();
+        s.visuals.window_stroke = Stroke::new(1.0_f32, white(0.15));
         s.visuals.extreme_bg_color = Color32::TRANSPARENT;
-        s.visuals.selection.bg_fill = rgba(162, 203, 237, 0.45);
-        s.visuals.selection.stroke = Stroke::new(1.0_f32, WHITE);
-        s.visuals.text_cursor.stroke = Stroke::new(1.5_f32, WHITE);
+        s.visuals.selection.bg_fill = if light { rgba(0, 122, 255, 0.3) } else { rgba(162, 203, 237, 0.45) };
+        s.visuals.selection.stroke = Stroke::new(1.0_f32, ink());
+        s.visuals.text_cursor.stroke = Stroke::new(1.5_f32, ink());
         s.visuals.widgets.inactive.bg_stroke = Stroke::NONE;
         s.visuals.widgets.hovered.bg_stroke = Stroke::NONE;
         s.visuals.widgets.active.bg_stroke = Stroke::NONE;
         s.visuals.widgets.noninteractive.bg_stroke = Stroke::NONE;
-        s.visuals.widgets.inactive.corner_radius = CornerRadius::same(8);
+        for w in [&mut s.visuals.widgets.inactive, &mut s.visuals.widgets.hovered, &mut s.visuals.widgets.active, &mut s.visuals.widgets.open] {
+            w.corner_radius = CornerRadius::same(7);
+            w.fg_stroke = Stroke::new(1.0_f32, ink());
+        }
         s.spacing.item_spacing = Vec2::new(8.0, 8.0);
         s.spacing.scroll = egui::style::ScrollStyle::thin();
         s.spacing.scroll.bar_width = 6.0;
-        s.visuals.widgets.inactive.bg_fill = white(0.15);
-        s.visuals.widgets.hovered.bg_fill = white(0.25);
-        s.visuals.widgets.active.bg_fill = white(0.3);
+        s.spacing.button_padding = Vec2::new(10.0, 5.0);
+        s.visuals.widgets.inactive.bg_fill = white(0.12);
+        s.visuals.widgets.inactive.weak_bg_fill = white(0.12);
+        s.visuals.widgets.hovered.bg_fill = white(0.2);
+        s.visuals.widgets.hovered.weak_bg_fill = white(0.2);
+        s.visuals.widgets.active.bg_fill = white(0.26);
+        s.visuals.widgets.active.weak_bg_fill = white(0.26);
+        s.visuals.widgets.open.weak_bg_fill = white(0.2);
+        s.visuals.popup_shadow = Shadow { offset: [0, 8], blur: 24, spread: 0, color: rgba(0, 0, 0, 0.3) };
         s.interaction.selectable_labels = false;
         s.text_styles.insert(egui::TextStyle::Body, font(14.0, 400));
-        s.text_styles.insert(egui::TextStyle::Button, font(14.0, 400));
+        s.text_styles.insert(egui::TextStyle::Button, font(13.0, 500));
         s.text_styles.insert(egui::TextStyle::Small, font(12.0, 400));
         s.text_styles.insert(egui::TextStyle::Monospace, mono(12.5));
     });
@@ -224,10 +301,12 @@ pub fn button_enabled(ui: &mut Ui, label: &str, kind: Btn, size: f32, width: Opt
     if ui.is_rect_visible(rect) {
         let hover = ui.ctx().animate_bool_with_time(resp.id, resp.hovered() && enabled, 0.2);
         let (fill, fill_hover, stroke, color) = match kind {
+            Btn::Primary if is_light() => (select_blue(), lerp_color(select_blue(), Color32::BLACK, 0.12), Color32::TRANSPARENT, WHITE),
             Btn::Primary => (WHITE, WHITE, Color32::TRANSPARENT, ACCENT),
-            Btn::Glass => (white(0.18), white(0.26), white(0.25), WHITE),
-            Btn::Subtle => (white(0.10), white(0.18), Color32::TRANSPARENT, WHITE),
-            Btn::Danger => (rgba(239, 68, 68, 0.18), rgba(239, 68, 68, 0.28), rgba(252, 165, 165, 0.35), RED_TEXT),
+            Btn::Glass if is_light() => (WHITE, Color32::from_rgb(0xf2, 0xf2, 0xf4), white(0.22), ink()),
+            Btn::Glass => (white(0.18), white(0.26), white(0.25), ink()),
+            Btn::Subtle => (white(0.10), white(0.18), Color32::TRANSPARENT, ink()),
+            Btn::Danger => (rgba(239, 68, 68, 0.14), rgba(239, 68, 68, 0.24), rgba(239, 68, 68, 0.35), red_text()),
         };
         let lift = if kind == Btn::Primary { hover * 1.0 } else { 0.0 };
         let r = rect.translate(Vec2::new(0.0, -lift));
@@ -262,7 +341,7 @@ pub fn hover_fill(ui: &Ui, resp: &Response, rect: Rect, radius: u8, color: Color
 pub fn text_input(ui: &mut Ui, value: &mut String, hint: &str, password: bool, width: f32, id: egui::Id) -> Response {
     let h = 38.0;
     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, h), Sense::hover());
-    ui.painter().rect(rect, CornerRadius::same(255), white(0.18), Stroke::new(1.0_f32, white(0.25)), StrokeKind::Inside);
+    ui.painter().rect(rect, CornerRadius::same(255), lit(0.18), Stroke::new(1.0_f32, lit(0.25)), StrokeKind::Inside);
     let inner = rect.shrink2(Vec2::new(16.0, 9.0));
     let edit = egui::TextEdit::singleline(value)
         .id(id)
@@ -270,7 +349,7 @@ pub fn text_input(ui: &mut Ui, value: &mut String, hint: &str, password: bool, w
         .password(password)
         .font(font(14.0, 400))
         .text_color(WHITE)
-        .hint_text(egui::RichText::new(hint).color(white(0.55)).font(font(14.0, 400)))
+        .hint_text(egui::RichText::new(hint).color(lit(0.55)).font(font(14.0, 400)))
         .desired_width(inner.width())
         .margin(Vec2::ZERO);
     let resp = ui.put(inner, edit);
@@ -285,5 +364,5 @@ pub fn dot(painter: &egui::Painter, center: Pos2, on: bool, glow: bool) {
     if on && glow {
         painter.circle_filled(center, 7.0, rgba(110, 231, 160, 0.18));
     }
-    painter.circle_filled(center, 4.0, if on { GREEN } else { white(0.4) });
+    painter.circle_filled(center, 4.0, if on { green() } else { white(0.4) });
 }

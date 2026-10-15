@@ -143,7 +143,7 @@ pub fn show(ui: &mut Ui, st: &mut FieldGuideUi, core: &mut Core, now: f64, radiu
                 Kind::Tables(tables) => {
                     for t in tables {
                         info_card(ui, accent, |ui| {
-                            ui.label(RichText::new(t.title.to_uppercase()).font(font(12.0, 700)).color(rgb(accent)));
+                            ui.label(RichText::new(t.title.to_uppercase()).font(font(12.0, 700)).color(accent_text(accent)));
                             table(ui, &t.head, &t.rows);
                         });
                     }
@@ -205,7 +205,7 @@ struct Ctx<'a> {
 
 fn sidebar(ui: &mut Ui, side: Rect, narrow: bool, radius: u8, state: &FieldGuideState, acts: &mut Vec<Act>) {
     let p = ui.painter().clone();
-    p.rect_filled(side, CornerRadius { nw: 0, ne: 0, sw: if narrow { 0 } else { radius.saturating_sub(1) }, se: 0 }, rgba(0, 0, 0, 0.2));
+    p.rect_filled(side, CornerRadius { nw: 0, ne: 0, sw: if narrow { 0 } else { radius.saturating_sub(1) }, se: 0 }, sidebar_bg());
     if narrow {
         p.hline(side.x_range(), side.bottom(), Stroke::new(1.0_f32, white(0.1)));
     } else {
@@ -218,10 +218,10 @@ fn sidebar(ui: &mut Ui, side: Rect, narrow: bool, radius: u8, state: &FieldGuide
         let pr = state.progress(page.id);
         let f = font(13.5, if active { 600 } else { 400 });
         let badge = if page.id != "home" && !pr.done.is_empty() { Some(if pr.complete { "✓".to_string() } else { pr.done.len().to_string() }) } else { None };
-        let width = w.unwrap_or_else(|| ui.fonts(|fo| fo.layout_no_wrap(page.title.into(), f.clone(), WHITE).size().x) + 60.0 + if badge.is_some() { 30.0 } else { 0.0 });
+        let width = w.unwrap_or_else(|| ui.fonts(|fo| fo.layout_no_wrap(page.title.into(), f.clone(), ink()).size().x) + 60.0 + if badge.is_some() { 30.0 } else { 0.0 });
         // Long titles wrap onto a second line in the sidebar (one line in the narrow strip).
         let text_w = width - 8.0 - 26.0 - 9.0 - 8.0 - if badge.is_some() { 30.0 } else { 0.0 };
-        let galley = ui.fonts(|fo| if w.is_some() { fo.layout(page.title.to_string(), f.clone(), WHITE, text_w) } else { fo.layout_no_wrap(page.title.to_string(), f.clone(), WHITE) });
+        let galley = ui.fonts(|fo| if w.is_some() { fo.layout(page.title.to_string(), f.clone(), ink(), text_w) } else { fo.layout_no_wrap(page.title.to_string(), f.clone(), ink()) });
         let height = (galley.size().y + 14.0).max(36.0);
         let (r, resp) = ui.allocate_exact_size(Vec2::new(width, height), Sense::click());
         let c = page.color;
@@ -239,13 +239,13 @@ fn sidebar(ui: &mut Ui, side: Rect, narrow: bool, radius: u8, state: &FieldGuide
         let br = Rect::from_center_size(Pos2::new(r.left() + 8.0 + 13.0, r.center().y), Vec2::splat(26.0 * (1.0 + 0.18 * hover)));
         ui.painter().rect_filled(br, 8.0, tint(c, 0.28));
         emoji_image(page.icon).paint_at(ui, Rect::from_center_size(br.center(), Vec2::splat(15.0 * (1.0 + 0.18 * hover))));
-        ui.painter().galley(Pos2::new(r.left() + 8.0 + 26.0 + 9.0, r.center().y - galley.size().y / 2.0), galley, WHITE);
+        ui.painter().galley(Pos2::new(r.left() + 8.0 + 26.0 + 9.0, r.center().y - galley.size().y / 2.0), galley, ink());
         if let Some(b) = badge {
-            let g = ui.fonts(|fo| fo.layout_no_wrap(b, font(11.0, 600), WHITE));
+            let g = ui.fonts(|fo| fo.layout_no_wrap(b, font(11.0, 600), ink()));
             let bw = (g.size().x + 12.0).max(20.0);
             let bb = Rect::from_center_size(Pos2::new(r.right() - 8.0 - bw / 2.0, r.center().y), Vec2::new(bw, 18.0));
             ui.painter().rect_filled(bb, 10.0, tint(c, 0.45));
-            ui.painter().galley(bb.center() - g.size() / 2.0, g, WHITE);
+            ui.painter().galley(bb.center() - g.size() / 2.0, g, ink());
         }
         if resp.clicked() {
             acts.push(if page.id == "home" { Act::Run("home", None) } else { Act::Run("open", Some(page.id.to_string())) });
@@ -314,27 +314,27 @@ fn hero(ui: &mut Ui, page: &Page, state: &FieldGuideState, narrow: bool, acts: &
     let tx = er.right() + 16.0;
     let tw = (r.right() - pad - reset_w - tx).max(60.0);
     let title_font = display(if narrow { 19.0 } else { 24.0 }, 700);
-    let title = ui.fonts(|f| f.layout(page.title.to_string(), title_font, WHITE, tw));
+    let title = ui.fonts(|f| f.layout(page.title.to_string(), title_font, ink(), tw));
     let title_h = title.size().y;
     let line2_h = 22.0;
     let ty = r.center().y - (title_h + 4.0 + line2_h) / 2.0;
-    p.galley(Pos2::new(tx, ty), title, WHITE);
+    p.galley(Pos2::new(tx, ty), title, ink());
     let y2 = ty + title_h + 4.0;
     if pr.needs_choice && total == 0 {
         p.text(Pos2::new(tx, y2 + line2_h / 2.0), Align2::LEFT_CENTER, "Pick what applies to start", font(13.5, 400), white(0.75));
     } else if total > 0 {
         let label = if pr.complete { "All done!".to_string() } else { format!("{} / {}", pr.done.len(), total) };
-        let g = ui.fonts(|f| f.layout_no_wrap(label, font(13.0, 600), WHITE));
+        let g = ui.fonts(|f| f.layout_no_wrap(label, font(13.0, 600), ink()));
         let bar_w = (tw - g.size().x - 12.0 - if pr.complete { 22.0 } else { 0.0 }).min(320.0).max(40.0);
         let bar = Rect::from_min_size(Pos2::new(tx, y2 + line2_h / 2.0 - 4.0), Vec2::new(bar_w, 8.0));
-        p.rect_filled(bar, 4.0, rgba(0, 0, 0, 0.28));
+        p.rect_filled(bar, 4.0, white(0.18));
         let frac = ui.ctx().animate_value_with_time(egui::Id::new(("fg-bar", page.id)), pr.done.len() as f32 / total as f32, 0.45);
         if frac > 0.0 {
             p.rect_filled(Rect::from_min_size(bar.min, Vec2::new(bar_w * frac, 8.0)), 4.0, rgb(c));
         }
         let gx = bar.right() + 12.0;
         let gw = g.size().x;
-        p.galley(Pos2::new(gx, bar.center().y - g.size().y / 2.0), g, WHITE);
+        p.galley(Pos2::new(gx, bar.center().y - g.size().y / 2.0), g, ink());
         if pr.complete {
             emoji_image("1f389").paint_at(ui, Rect::from_min_size(Pos2::new(gx + gw + 4.0, bar.center().y - 8.0), Vec2::splat(16.0)));
         }
@@ -398,7 +398,7 @@ fn home(ui: &mut Ui, state: &FieldGuideState, acts: &mut Vec<Act>, _now: f64) {
             let mut y = r.bottom() - 14.0;
             if has_bar {
                 let bar = Rect::from_min_max(Pos2::new(r.left() + 14.0, y - 5.0), Pos2::new(r.right() - 14.0, y));
-                p.rect_filled(bar, 3.0, rgba(0, 0, 0, 0.28));
+                p.rect_filled(bar, 3.0, white(0.18));
                 let frac = if pr.keys.is_empty() { 0.0 } else { pr.done.len() as f32 / pr.keys.len() as f32 };
                 if frac > 0.0 {
                     p.rect_filled(Rect::from_min_size(bar.min, Vec2::new(bar.width() * frac, 5.0)), 3.0, rgb(c));
@@ -406,8 +406,8 @@ fn home(ui: &mut Ui, state: &FieldGuideState, acts: &mut Vec<Act>, _now: f64) {
                 y -= 5.0 + 6.0;
             }
             let small = p.text(Pos2::new(r.left() + 14.0, y), Align2::LEFT_BOTTOM, label, font(12.0, 400), white(0.7));
-            let title = ui.fonts(|f| f.layout(page.title.to_string(), font(14.0, 600), WHITE, r.width() - 28.0));
-            p.galley(Pos2::new(r.left() + 14.0, small.top() - 4.0 - title.size().y), title, WHITE);
+            let title = ui.fonts(|f| f.layout(page.title.to_string(), font(14.0, 600), ink(), r.width() - 28.0));
+            p.galley(Pos2::new(r.left() + 14.0, small.top() - 4.0 - title.size().y), title, ink());
             if resp.hovered() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
             }
@@ -443,7 +443,7 @@ fn section(ui: &mut Ui, ctx: &Ctx, s: &'static Section, prefix: &str, si: usize,
     let body = |ui: &mut Ui| {
         ui.horizontal(|ui| {
             ui.add_space(4.0);
-            ui.label(RichText::new(s.title.to_uppercase()).font(font(12.0, 700)).color(rgb(accent)));
+            ui.label(RichText::new(s.title.to_uppercase()).font(font(12.0, 700)).color(accent_text(accent)));
         });
         ui.add_space(-2.0);
         if s.info {
@@ -470,7 +470,7 @@ fn section(ui: &mut Ui, ctx: &Ctx, s: &'static Section, prefix: &str, si: usize,
 }
 
 fn step_card(ui: &mut Ui, body: impl FnOnce(&mut Ui)) {
-    egui::Frame::NONE.fill(white(0.1)).stroke(Stroke::new(1.0_f32, white(0.18))).corner_radius(CornerRadius::same(18)).inner_margin(Margin::same(14)).show(ui, |ui| {
+    egui::Frame::NONE.fill(card_fill()).stroke(Stroke::new(1.0_f32, white(0.18))).corner_radius(CornerRadius::same(18)).inner_margin(Margin::same(14)).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.spacing_mut().item_spacing.y = 8.0;
         body(ui);
@@ -488,15 +488,15 @@ fn info_card(ui: &mut Ui, accent: [u8; 3], body: impl FnOnce(&mut Ui)) {
 
 fn bullet(ui: &mut Ui, accent: [u8; 3], text: &str) {
     let w = ui.available_width();
-    let g = ui.fonts(|f| f.layout(text.to_string(), font(14.0, 400), WHITE, w - 22.0));
+    let g = ui.fonts(|f| f.layout(text.to_string(), font(14.0, 400), ink(), w - 22.0));
     let (r, _) = ui.allocate_exact_size(Vec2::new(w, g.size().y), Sense::hover());
     ui.painter().circle_filled(Pos2::new(r.left() + 7.0, r.top() + 10.0), 3.0, rgb(accent));
-    ui.painter().galley(Pos2::new(r.left() + 18.0, r.top()), g, WHITE);
+    ui.painter().galley(Pos2::new(r.left() + 18.0, r.top()), g, ink());
 }
 
 fn step(ui: &mut Ui, accent: [u8; 3], n: usize, text: &str, done: bool, next: bool, key: &str) -> egui::Response {
     let w = ui.available_width();
-    let color = if done { white(0.6) } else { WHITE };
+    let color = if done { white(0.6) } else { ink() };
     let g = ui.fonts(|f| f.layout(text.to_string(), font(14.0, 400), color, w - 20.0 - 24.0 - 11.0));
     let h = g.size().y.max(20.0) + 16.0;
     let (r, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click());
@@ -526,10 +526,10 @@ fn step(ui: &mut Ui, accent: [u8; 3], n: usize, text: &str, done: bool, next: bo
     } else {
         ui.ctx().animate_bool_with_time(egui::Id::new(("pop", key)), false, 0.0);
         if next {
-            p.circle_filled(c, 11.0, Color32::from_rgb(20, 36, 58));
+            p.circle_filled(c, 11.0, window_bg());
         }
         p.circle_stroke(c, 11.0, Stroke::new(2.0_f32, tint(accent, 0.7)));
-        p.text(c, Align2::CENTER_CENTER, n.to_string(), font(12.0, 700), rgb(accent));
+        p.text(c, Align2::CENTER_CENTER, n.to_string(), font(12.0, 700), accent_text(accent));
     }
     let tx = Pos2::new(r.left() + 10.0 + 24.0 + 11.0, r.top() + 8.0);
     let tw = g.size().x;
@@ -561,7 +561,7 @@ fn choice_card(ui: &mut Ui, accent: [u8; 3], question: &str, options: &[(String,
                 let bw = if compact { min_w } else { (w - gap * (cols as f32 - 1.0)) / cols as f32 };
                 for chunk in options.chunks(cols).enumerate() {
                     let (ci, row) = chunk;
-                    let texts: Vec<_> = row.iter().map(|(_, t)| ui.fonts(|f| f.layout(t.clone(), font(14.0, 500), WHITE, bw - 28.0 - 26.0 - 10.0))).collect();
+                    let texts: Vec<_> = row.iter().map(|(_, t)| ui.fonts(|f| f.layout(t.clone(), font(14.0, 500), ink(), bw - 28.0 - 26.0 - 10.0))).collect();
                     let h = texts.iter().map(|g| g.size().y).fold(26.0f32, f32::max) + if compact { 16.0 } else { 24.0 };
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = gap;
@@ -576,7 +576,7 @@ fn choice_card(ui: &mut Ui, accent: [u8; 3], question: &str, options: &[(String,
                             p.rect(r, CornerRadius::same(16), fill, Stroke::new(2.0_f32, if is { rgb(accent) } else { Color32::TRANSPARENT }), StrokeKind::Inside);
                             let br = Rect::from_min_size(Pos2::new(r.left() + 14.0, r.center().y - 13.0), Vec2::splat(26.0));
                             p.rect_filled(br, 9.0, if is { rgb(accent) } else { tint(accent, 0.35) });
-                            let bc = if is { Color32::from_rgb(0x0b, 0x1a, 0x2e) } else { WHITE };
+                            let bc = if is { Color32::from_rgb(0x0b, 0x1a, 0x2e) } else { ink() };
                             if badge == "✕" {
                                 // Drawn by hand: the fonts don't have this mark.
                                 let k = 4.5;
@@ -585,7 +585,7 @@ fn choice_card(ui: &mut Ui, accent: [u8; 3], question: &str, options: &[(String,
                             } else {
                                 p.text(br.center(), Align2::CENTER_CENTER, badge, font(13.0, 700), bc);
                             }
-                            p.galley(Pos2::new(br.right() + 10.0, r.center().y - g.size().y / 2.0), g, WHITE);
+                            p.galley(Pos2::new(br.right() + 10.0, r.center().y - g.size().y / 2.0), g, ink());
                             if resp.hovered() {
                                 ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                             }
@@ -600,7 +600,7 @@ fn choice_card(ui: &mut Ui, accent: [u8; 3], question: &str, options: &[(String,
                 let buttons_w = options.len() as f32 * min_w + (options.len() as f32 - 1.0) * 8.0;
                 if w - buttons_w >= 150.0 {
                     let (row, _) = ui.allocate_exact_size(Vec2::new(w, 42.0), Sense::hover());
-                    ui.painter().text(Pos2::new(row.left(), row.center().y), Align2::LEFT_CENTER, question, display(15.0, 700), WHITE);
+                    ui.painter().text(Pos2::new(row.left(), row.center().y), Align2::LEFT_CENTER, question, display(15.0, 700), ink());
                     let mut child = ui.new_child(UiBuilder::new().max_rect(Rect::from_min_size(Pos2::new(row.right() - buttons_w, row.top()), Vec2::new(buttons_w, 42.0))).layout(Layout::top_down(Align::Min)));
                     draw_buttons(&mut child, buttons_w, &mut picked);
                 } else {
@@ -622,9 +622,9 @@ fn choice_card(ui: &mut Ui, accent: [u8; 3], question: &str, options: &[(String,
 fn table(ui: &mut Ui, head: &[&str], rows: &[Vec<&str>]) {
     let w = ui.available_width();
     // First column sized to its longest entry; the rest share what's left.
-    let first_w = rows.iter().map(|r| r[0]).chain(std::iter::once(head[0])).map(|t| ui.fonts(|f| f.layout_no_wrap(t.to_string(), font(13.5, 600), WHITE).size().x)).fold(0.0, f32::max) + 16.0;
+    let first_w = rows.iter().map(|r| r[0]).chain(std::iter::once(head[0])).map(|t| ui.fonts(|f| f.layout_no_wrap(t.to_string(), font(13.5, 600), ink()).size().x)).fold(0.0, f32::max) + 16.0;
     let narrow_cols: Vec<f32> = (1..head.len()).map(|c| {
-        let longest = rows.iter().map(|r| r[c]).chain(std::iter::once(head[c])).map(|t| ui.fonts(|f| f.layout_no_wrap(t.to_string(), font(13.5, 400), WHITE).size().x)).fold(0.0, f32::max) + 16.0;
+        let longest = rows.iter().map(|r| r[c]).chain(std::iter::once(head[c])).map(|t| ui.fonts(|f| f.layout_no_wrap(t.to_string(), font(13.5, 400), ink()).size().x)).fold(0.0, f32::max) + 16.0;
         longest
     }).collect();
     let rest = (w - first_w).max(60.0);
@@ -635,7 +635,7 @@ fn table(ui: &mut Ui, head: &[&str], rows: &[Vec<&str>]) {
             .iter()
             .enumerate()
             .map(|(i, t)| {
-                let (f, c) = if header { (font(12.0, 600), white(0.6)) } else if i == 0 { (font(13.5, 600), WHITE) } else { (font(13.5, 400), WHITE) };
+                let (f, c) = if header { (font(12.0, 600), white(0.6)) } else if i == 0 { (font(13.5, 600), ink()) } else { (font(13.5, 400), ink()) };
                 ui.fonts(|fo| fo.layout(t.to_string(), f, c, widths[i] - 16.0))
             })
             .collect();
@@ -646,7 +646,7 @@ fn table(ui: &mut Ui, head: &[&str], rows: &[Vec<&str>]) {
         }
         let mut x = r.left();
         for (i, g) in galleys.into_iter().enumerate() {
-            ui.painter().galley(Pos2::new(x + 8.0, r.top() + if header { 6.0 } else { 8.0 }), g, WHITE);
+            ui.painter().galley(Pos2::new(x + 8.0, r.top() + if header { 6.0 } else { 8.0 }), g, ink());
             x += widths[i];
         }
     };
@@ -659,13 +659,13 @@ fn table(ui: &mut Ui, head: &[&str], rows: &[Vec<&str>]) {
 
 fn footer_button(ui: &mut Ui, page: &Page) -> bool {
     let c = page.color;
-    let g = ui.fonts(|f| f.layout_no_wrap(page.title.to_string(), font(13.0, 400), WHITE));
+    let g = ui.fonts(|f| f.layout_no_wrap(page.title.to_string(), font(13.0, 400), ink()));
     let (r, resp) = ui.allocate_exact_size(Vec2::new(g.size().x + 32.0 + 20.0, 32.0), Sense::click());
     let hover = ui.ctx().animate_bool_with_time(resp.id, resp.hovered(), 0.2);
     let r = r.translate(Vec2::new(0.0, -2.0 * hover));
     ui.painter().rect(r, CornerRadius::same(255), lerp_color(tint(c, 0.26), tint(c, 0.40), hover), Stroke::new(1.0_f32, tint(c, 0.55)), StrokeKind::Inside);
     emoji_image(page.icon).paint_at(ui, Rect::from_min_size(Pos2::new(r.left() + 16.0, r.center().y - 8.0), Vec2::splat(16.0)));
-    ui.painter().galley(Pos2::new(r.left() + 16.0 + 20.0, r.center().y - g.size().y / 2.0), g, WHITE);
+    ui.painter().galley(Pos2::new(r.left() + 16.0 + 20.0, r.center().y - g.size().y / 2.0), g, ink());
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }

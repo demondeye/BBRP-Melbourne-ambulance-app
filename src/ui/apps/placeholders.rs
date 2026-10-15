@@ -25,7 +25,7 @@ pub fn notes(ui: &mut Ui, text: &mut String) {
         ui.add_space(10.0);
         let size = Vec2::new(ui.available_width(), (rect.bottom() - ui.cursor().top() - 22.0).max(120.0));
         let (box_rect, _) = ui.allocate_exact_size(size, Sense::hover());
-        ui.painter().rect(box_rect, CornerRadius::same(16), white(0.1), Stroke::new(1.0_f32, white(0.18)), StrokeKind::Inside);
+        ui.painter().rect(box_rect, CornerRadius::same(16), card_fill(), Stroke::new(1.0_f32, white(0.18)), StrokeKind::Inside);
         let inner = box_rect.shrink2(Vec2::new(16.0, 14.0));
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
         let resp = egui::ScrollArea::vertical().id_salt("notes-scroll").auto_shrink([false, false]).show(&mut child, |ui| {
@@ -40,7 +40,7 @@ pub fn notes(ui: &mut Ui, text: &mut String) {
             )
         });
         if resp.inner.has_focus() {
-            ui.painter().rect_stroke(box_rect.expand(2.0), CornerRadius::same(18), Stroke::new(2.0_f32, ICE), StrokeKind::Outside);
+            ui.painter().rect_stroke(box_rect.expand(2.0), CornerRadius::same(18), Stroke::new(2.0_f32, ice_text()), StrokeKind::Outside);
         }
     });
 }
