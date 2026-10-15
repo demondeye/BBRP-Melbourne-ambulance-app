@@ -52,9 +52,6 @@ fn radial(rect: Rect, p: Pos2, cx: f32, cy: f32, color: [u8; 3], alpha: f32, end
 }
 
 /// Paints a built-in wallpaper, with the soft highlights and glass sheen on top.
-pub fn paint_preset(painter: &Painter, rect: Rect, preset: &WallpaperPreset, sheen: bool) {
-    paint_preset_rounded(painter, rect, preset, sheen, 0.0)
-}
 
 /// Same, with rounded corners.
 pub fn paint_preset_rounded(painter: &Painter, rect: Rect, preset: &WallpaperPreset, sheen: bool, radius: f32) {
@@ -97,40 +94,85 @@ fn round_corner(rect: Rect, r: f32, p: Pos2) -> Pos2 {
 }
 
 /// Paints a picture so it covers the whole rect (cropping what doesn't fit).
-pub fn paint_image_cover(ui: &Ui, painter: &Painter, rect: Rect, path: &str) -> bool {
-    paint_image_cover_rounded(ui, painter, rect, path, 0)
+pub fn paint_image_cover_rounded(ui: &Ui, painter: &Painter, rect: Rect, path: &str, radius: u8) -> bool {
+    paint_image(ui, painter, rect, path, "fill", [0, 0, 0], radius, 1.0)
 }
 
-pub fn paint_image_cover_rounded(ui: &Ui, painter: &Painter, rect: Rect, path: &str, radius: u8) -> bool {
+fn textured(rect: Rect, radius: u8, texture: egui::TextureId, uv: Rect) -> egui::epaint::RectShape {
+    let mut shape = egui::epaint::RectShape::filled(rect, radius, Color32::WHITE);
+    shape.brush = Some(std::sync::Arc::new(egui::epaint::Brush { fill_texture_id: texture, uv }));
+    shape
+}
+
+/// Paints the user's picture, sized like a Mac desktop picture:
+/// - `fill`    covers the whole area, cropping what doesn't fit
+/// - `fit`     shows the whole picture, with `bg` around it
+/// - `stretch` stretches it to the area's shape
+/// - `center`  shows it at its real size in the middle, with `bg` around it
+/// - `tile`    repeats it at its real size
+/// `scale` shrinks "real size" for small previews (preview width ÷ screen width).
+#[allow(clippy::too_many_arguments)]
+pub fn paint_image(ui: &Ui, painter: &Painter, rect: Rect, path: &str, fit: &str, bg: [u8; 3], radius: u8, scale: f32) -> bool {
     let uri = format!("file://{}", path.replace('\\', "/"));
-    match ui.ctx().try_load_texture(&uri, egui::TextureOptions::LINEAR, egui::SizeHint::default()) {
-        Ok(egui::load::TexturePoll::Ready { texture }) => {
-            let (iw, ih) = (texture.size.x.max(1.0), texture.size.y.max(1.0));
-            let scale = (rect.width() / iw).max(rect.height() / ih);
-            let (vw, vh) = (rect.width() / scale / iw, rect.height() / scale / ih);
-            let uv = Rect::from_min_max(Pos2::new((1.0 - vw) / 2.0, (1.0 - vh) / 2.0), Pos2::new((1.0 + vw) / 2.0, (1.0 + vh) / 2.0));
-            let mut shape = egui::epaint::RectShape::filled(rect, radius, Color32::WHITE);
-            shape.brush = Some(std::sync::Arc::new(egui::epaint::Brush { fill_texture_id: texture.id, uv }));
-            painter.add(shape);
-            true
-        }
+    let options = if fit == "tile" { egui::TextureOptions::LINEAR_REPEAT } else { egui::TextureOptions::LINEAR };
+    let texture = match ui.ctx().try_load_texture(&uri, options, egui::SizeHint::default()) {
+        Ok(egui::load::TexturePoll::Ready { texture }) => texture,
         Ok(egui::load::TexturePoll::Pending { .. }) => {
             ui.ctx().request_repaint();
-            false
+            return false;
         }
-        Err(_) => false,
+        Err(_) => return false,
+    };
+    let (iw, ih) = (texture.size.x.max(1.0), texture.size.y.max(1.0));
+    // The picture's real size on screen, in points.
+    let ppp = ui.ctx().pixels_per_point();
+    let real = egui::vec2(iw / ppp, ih / ppp) * scale;
+    let full_uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+    let clipped = painter.with_clip_rect(rect.intersect(painter.clip_rect()));
+    match fit {
+        "stretch" => {
+            painter.add(textured(rect, radius, texture.id, full_uv));
+        }
+        "fit" => {
+            painter.rect_filled(rect, radius, super::theme::rgb(bg));
+            let k = (rect.width() / iw).min(rect.height() / ih);
+            let r = Rect::from_center_size(rect.center(), egui::vec2(iw * k, ih * k));
+            painter.add(textured(r, 0, texture.id, full_uv));
+        }
+        "center" => {
+            painter.rect_filled(rect, radius, super::theme::rgb(bg));
+            let r = Rect::from_center_size(rect.center(), real);
+            clipped.add(textured(r, 0, texture.id, full_uv));
+        }
+        "tile" => {
+            // Tiles start from the top-left corner, like a Mac.
+            let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(rect.width() / real.x.max(1.0), rect.height() / real.y.max(1.0)));
+            painter.add(textured(rect, radius, texture.id, uv));
+        }
+        _ => {
+            let k = (rect.width() / iw).max(rect.height() / ih);
+            let (vw, vh) = (rect.width() / k / iw, rect.height() / k / ih);
+            let uv = Rect::from_min_max(Pos2::new((1.0 - vw) / 2.0, (1.0 - vh) / 2.0), Pos2::new((1.0 + vw) / 2.0, (1.0 + vh) / 2.0));
+            painter.add(textured(rect, radius, texture.id, uv));
+        }
     }
+    true
 }
 
 /// The background for these settings: the user's picture, or a built-in wallpaper.
 pub fn paint(ui: &Ui, painter: &Painter, rect: Rect, settings: &UserSettings, sheen: bool) {
+    paint_scaled(ui, painter, rect, settings, sheen, 0, 1.0)
+}
+
+/// Same, for previews: rounded corners, and real-size pictures shrunk by `scale`.
+pub fn paint_scaled(ui: &Ui, painter: &Painter, rect: Rect, settings: &UserSettings, sheen: bool, radius: u8, scale: f32) {
     if settings.using_image() {
-        painter.rect_filled(rect, 0.0, Color32::from_rgb(8, 24, 40));
-        if paint_image_cover(ui, painter, rect, settings.custom_image.as_deref().unwrap_or_default()) {
+        painter.rect_filled(rect, radius, super::theme::rgb(settings.fill_color));
+        if paint_image(ui, painter, rect, settings.custom_image.as_deref().unwrap_or_default(), &settings.fit, settings.fill_color, radius, scale) {
             return;
         }
     }
-    paint_preset(painter, rect, settings.preset(), sheen);
+    paint_preset_rounded(painter, rect, settings.preset(), sheen, radius as f32);
 }
 
 /// A rounded rectangle filled with a CSS-style linear gradient (angle in degrees).

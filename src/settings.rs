@@ -23,6 +23,11 @@ pub struct UserSettings {
     pub custom_image: Option<String>,
     #[serde(rename = "apiKey")]
     pub api_key: Option<String>,
+    /// How the user's own picture is sized: fill, fit, stretch, center or tile.
+    pub fit: String,
+    /// Colour shown around the picture when it doesn't cover the screen (Fit, Centre).
+    #[serde(rename = "fillColor")]
+    pub fill_color: [u8; 3],
 }
 
 impl Default for Wallpaper {
@@ -32,7 +37,7 @@ impl Default for Wallpaper {
 }
 impl Default for UserSettings {
     fn default() -> Self {
-        Self { wallpaper: Wallpaper::default(), custom_image: None, api_key: None }
+        Self { wallpaper: Wallpaper::default(), custom_image: None, api_key: None, fit: "fill".into(), fill_color: [13, 27, 46] }
     }
 }
 
@@ -69,6 +74,12 @@ pub const WALLPAPERS: [WallpaperPreset; 6] = [
     WallpaperPreset { id: "ember", name: "Ember", angle: 155.0, stops: &[(0.0, 0x160808), (0.32, 0x5a1818), (0.66, 0xb23a2a), (1.0, 0xf0a35e)] },
     WallpaperPreset { id: "slate", name: "Slate", angle: 155.0, stops: &[(0.0, 0x0e1114), (0.35, 0x252c35), (0.70, 0x4e5a66), (1.0, 0x98a5af)] },
 ];
+
+/// The picture sizing options, like a Mac: (id, label).
+pub const FITS: [(&str, &str); 5] = [("fill", "Fill Screen"), ("fit", "Fit to Screen"), ("stretch", "Stretch to Fill"), ("center", "Centre"), ("tile", "Tile")];
+
+/// Colours offered for the space around a picture.
+pub const FILL_COLORS: [[u8; 3]; 8] = [[13, 27, 46], [0, 0, 0], [40, 44, 52], [29, 15, 94], [23, 79, 132], [31, 138, 108], [168, 72, 111], [235, 235, 240]];
 
 pub fn new_api_key() -> String {
     use rand::RngCore;

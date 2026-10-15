@@ -3,7 +3,7 @@
 use crate::core::{Core, ServerStatus};
 use crate::fieldguide::data::guide;
 use crate::relay::PORT;
-use crate::settings::{import_wallpaper, new_api_key, WALLPAPERS};
+use crate::settings::{import_wallpaper, new_api_key, FILL_COLORS, FITS, WALLPAPERS};
 use crate::ui::icons;
 use crate::ui::theme::{self, *};
 use crate::ui::wallpaper;
@@ -140,10 +140,9 @@ fn wallpaper_pane(ui: &mut Ui, st: &mut SettingsUi, core: &mut Core, name: &str)
     let (r, _) = ui.allocate_exact_size(Vec2::new(w, w * 10.0 / 16.0), Sense::hover());
     let p = ui.painter().clone();
     theme::shadow(&p, r, 16, 10, 30, 0.3);
-    if using_image && wallpaper::paint_image_cover_rounded(ui, &p, r, settings.custom_image.as_deref().unwrap_or_default(), 16) {
-    } else {
-        wallpaper::paint_preset_rounded(&p, r, settings.preset(), true, 16.0);
-    }
+    // A small copy of the screen, so real-size pictures (Centre, Tile) shrink to match.
+    let scale = r.width() / ui.ctx().screen_rect().width().max(1.0);
+    wallpaper::paint_scaled(ui, &p, r, &settings, true, 16, scale);
     p.rect_stroke(r, CornerRadius::same(16), Stroke::new(1.0_f32, white(0.25)), StrokeKind::Inside);
     let label = if using_image { "Your picture" } else { settings.preset().name };
     let g = ui.fonts(|f| f.layout_no_wrap(label.into(), font(12.0, 400), WHITE));
@@ -184,6 +183,54 @@ fn wallpaper_pane(ui: &mut Ui, st: &mut SettingsUi, core: &mut Core, name: &str)
             let mut s = settings.clone();
             s.wallpaper.kind = "image".into();
             core.save_settings(s);
+        }
+
+        // How the picture fills the screen, like a Mac.
+        heading(ui, "Picture size");
+        let mut pick_fit: Option<&str> = None;
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
+            for (id, label) in FITS {
+                let on = using_image && settings.fit == id;
+                if fit_button(ui, id, label, on) {
+                    pick_fit = Some(id);
+                }
+            }
+        });
+        if let Some(id) = pick_fit {
+            let mut s = settings.clone();
+            s.fit = id.to_string();
+            s.wallpaper.kind = "image".into();
+            core.save_settings(s);
+        }
+        if matches!(settings.fit.as_str(), "fit" | "center") {
+            heading(ui, "Colour around the picture");
+            let mut pick_color = None;
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = Vec2::new(8.0, 8.0);
+                for c in FILL_COLORS {
+                    let (r, resp) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::click());
+                    ui.painter().circle_filled(r.center(), 13.0, rgb(c));
+                    let selected = settings.fill_color == c;
+                    ui.painter().circle_stroke(r.center(), if selected { 15.0 } else { 13.0 }, Stroke::new(if selected { 2.0_f32 } else { 1.0 }, if selected { WHITE } else { white(0.3) }));
+                    if resp.hovered() {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                    }
+                    if resp.clicked() {
+                        pick_color = Some(c);
+                    }
+                }
+                // Any other colour
+                let mut custom = settings.fill_color;
+                if ui.color_edit_button_srgb(&mut custom).changed() {
+                    pick_color = Some(custom);
+                }
+            });
+            if let Some(c) = pick_color {
+                let mut s = settings.clone();
+                s.fill_color = c;
+                core.save_settings(s);
+            }
         }
     }
     ui.add_space(8.0);
@@ -514,4 +561,48 @@ pub fn clean_notes(notes: &str) -> String {
         .join("\n")
         .trim()
         .to_string()
+}
+
+/// One of the picture size choices: a little drawing of the option and its name.
+fn fit_button(ui: &mut Ui, id: &str, label: &str, on: bool) -> bool {
+    let (r, resp) = ui.allocate_exact_size(Vec2::new(92.0, 78.0), Sense::click());
+    let hover = resp.hovered();
+    let p = ui.painter();
+    p.rect(r, CornerRadius::same(12), if on { WHITE } else if hover { white(0.16) } else { white(0.08) }, Stroke::new(1.0_f32, if on { WHITE } else { white(0.18) }), StrokeKind::Inside);
+    // The "screen" and the picture inside it
+    let screen = Rect::from_center_size(Pos2::new(r.center().x, r.top() + 26.0), Vec2::new(46.0, 30.0));
+    let ink = if on { ACCENT } else { WHITE };
+    let pic = rgba(162, 203, 237, if on { 0.9 } else { 0.55 });
+    p.rect_filled(screen, 3.0, if on { rgba(29, 15, 94, 0.12) } else { white(0.08) });
+    match id {
+        "fill" => {
+            p.rect_filled(screen.expand2(Vec2::new(4.0, 0.0)).intersect(screen), 3.0, pic);
+        }
+        "fit" => {
+            p.rect_filled(Rect::from_center_size(screen.center(), Vec2::new(30.0, 30.0)), 0.0, pic);
+        }
+        "stretch" => {
+            p.rect_filled(screen, 3.0, pic);
+            let c = screen.center();
+            p.arrow(c, Vec2::new(14.0, 0.0), Stroke::new(1.5_f32, ink));
+            p.arrow(c, Vec2::new(-14.0, 0.0), Stroke::new(1.5_f32, ink));
+        }
+        "center" => {
+            p.rect_filled(Rect::from_center_size(screen.center(), Vec2::new(18.0, 12.0)), 0.0, pic);
+        }
+        _ => {
+            for i in 0..4 {
+                for j in 0..3 {
+                    let t = Rect::from_min_size(screen.min + Vec2::new(1.0 + i as f32 * 11.25, 1.0 + j as f32 * 9.5), Vec2::new(10.0, 8.5));
+                    p.rect_filled(t, 1.0, pic);
+                }
+            }
+        }
+    }
+    p.rect_stroke(screen, 3.0, Stroke::new(1.0_f32, if on { rgba(29, 15, 94, 0.5) } else { white(0.35) }), StrokeKind::Outside);
+    p.text(Pos2::new(r.center().x, r.bottom() - 10.0), Align2::CENTER_BOTTOM, label, font(12.0, if on { 600 } else { 400 }), ink);
+    if hover {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    resp.clicked()
 }

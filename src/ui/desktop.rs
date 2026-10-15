@@ -29,6 +29,7 @@ pub struct Confirm {
     pub at: f64,
 }
 
+#[derive(Clone, Copy)]
 enum CtxKind {
     Desktop,
     Text(Id),
@@ -828,11 +829,7 @@ impl Desktop {
         let pos = Pos2::new(pos.x.min(screen.right() - 220.0 - 6.0).max(6.0), pos.y.min(screen.bottom() - h - 6.0).max(6.0));
         let mut picked = None;
         let rect = menu_area(ctx, "ctx-menu", pos, 210.0, &items, &mut picked);
-        let kind = std::mem::replace(&mut self.ctx_menu.as_mut().unwrap().kind, CtxKind::Desktop);
-        self.ctx_menu.as_mut().unwrap().kind = match &kind {
-            CtxKind::Desktop => CtxKind::Desktop,
-            CtxKind::Text(id) => CtxKind::Text(*id),
-        };
+        let kind = self.ctx_menu.as_ref().map_or(CtxKind::Desktop, |m| m.kind);
         if let Some(action) = picked {
             self.ctx_menu = None;
             match (&kind, action) {
