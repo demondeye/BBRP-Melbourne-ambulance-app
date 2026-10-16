@@ -21,8 +21,6 @@ pub struct UserSettings {
     /// Path of the user's own picture (a resized copy kept in the app's folder).
     #[serde(rename = "customImage")]
     pub custom_image: Option<String>,
-    #[serde(rename = "apiKey")]
-    pub api_key: Option<String>,
     /// How the user's own picture is sized: fill, fit, stretch, center or tile.
     pub fit: String,
     /// Colour shown around the picture when it doesn't cover the screen (Fit, Centre).
@@ -39,7 +37,7 @@ impl Default for Wallpaper {
 }
 impl Default for UserSettings {
     fn default() -> Self {
-        Self { wallpaper: Wallpaper::default(), custom_image: None, api_key: None, fit: "fill".into(), fill_color: [13, 27, 46], appearance: "dark".into() }
+        Self { wallpaper: Wallpaper::default(), custom_image: None, fit: "fill".into(), fill_color: [13, 27, 46], appearance: "dark".into() }
     }
 }
 
@@ -82,13 +80,6 @@ pub const FITS: [(&str, &str); 5] = [("fill", "Fill Screen"), ("fit", "Fit to Sc
 
 /// Colours offered for the space around a picture.
 pub const FILL_COLORS: [[u8; 3]; 8] = [[13, 27, 46], [0, 0, 0], [40, 44, 52], [29, 15, 94], [23, 79, 132], [31, 138, 108], [168, 72, 111], [235, 235, 240]];
-
-pub fn new_api_key() -> String {
-    use rand::RngCore;
-    let mut bytes = [0u8; 16];
-    rand::thread_rng().fill_bytes(&mut bytes);
-    format!("va_{}", bytes.iter().map(|b| format!("{b:02x}")).collect::<String>())
-}
 
 /// Shrinks a chosen picture so it is quick to load, and keeps a copy for this user.
 pub fn import_wallpaper(name: &str, source: &std::path::Path) -> Result<String, String> {

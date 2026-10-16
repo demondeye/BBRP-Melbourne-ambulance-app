@@ -22,9 +22,9 @@ login / create local account → desktop with menu bar, dock, launcher and windo
   Field Guide (all pages, choices, MICA question, progress, confetti),
   Settings (wallpapers + your own picture, Stream Deck, Account, About),
   Patient Records, Notes and About placeholders
-- **Stream Deck control API** on `http://localhost:47913` with the same addresses,
-  API keys and replies, so the existing Stream Deck plugin keeps working.
-  The app has to be open for the keys to work.
+- **Stream Deck control API** on `http://localhost:47913` with the same addresses
+  and replies. No API key: it only answers this PC, refuses web pages, and
+  controls whoever is signed in. The app has to be open for the keys to work.
 
 ## Software updates
 
@@ -64,8 +64,7 @@ The repo has to stay public so the app can read it without a password.
 
 `%APPDATA%\Victoria Ambulance\` — account, per-user settings, time sheets, window
 layout and wallpaper pictures. (The web version kept these in the browser, so
-nothing moves across automatically: create the account again and paste the new
-API key into the Stream Deck plugin.)
+nothing moves across automatically: create the account again.)
 
 ## Build it yourself
 

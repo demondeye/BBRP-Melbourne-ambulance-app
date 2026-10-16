@@ -1,6 +1,6 @@
 [package]
 name = "victoria-ambulance"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 description = "Victoria Ambulance — native Rust desktop version"
 build = "build.rs"

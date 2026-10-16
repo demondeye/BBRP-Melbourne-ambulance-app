@@ -1,5 +1,6 @@
-## Fixes in 0.2.2
-- Stream Deck keys now connect reliably. Victoria Ambulance and the Stream Deck plugin use their own port (47913), so other apps and web tools can't get in the way.
-- Only one copy of Victoria Ambulance runs at a time. Opening it again brings the open window to the front instead of starting a second copy.
+## What's new in 0.2.3
+- No more API keys. The Stream Deck works straight away: keys control whoever is signed in on this PC, so there's nothing to copy or paste.
+- Still safe: Victoria Ambulance only listens to your own PC and turns away anything sent from a website, so a page open in your browser can't press your keys.
+- Settings → Stream Deck now just shows whether the Stream Deck can connect.
 
-**Stream Deck users:** install the updated Victoria Ambulance plugin (version 0.5.1). It connects to the app automatically — the Server box is gone, you only need your API key.
+**Stream Deck users:** install the updated Victoria Ambulance plugin (version 0.5.2). The API key box is gone, there's nothing to set up.

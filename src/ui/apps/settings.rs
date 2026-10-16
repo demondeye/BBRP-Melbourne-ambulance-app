@@ -4,7 +4,7 @@
 use crate::core::{Core, ServerStatus};
 use crate::fieldguide::data::guide;
 use crate::relay::PORT;
-use crate::settings::{import_wallpaper, new_api_key, FILL_COLORS, FITS, WALLPAPERS};
+use crate::settings::{import_wallpaper, FILL_COLORS, FITS, WALLPAPERS};
 use crate::ui::icons;
 use crate::ui::theme::{self, *};
 use crate::ui::wallpaper;
@@ -16,14 +16,12 @@ pub struct SettingsUi {
     forward: Vec<usize>,
     search: String,
     message: String,
-    show_key: bool,
-    confirming: bool,
     copied: Option<(String, f64)>,
 }
 
 impl Default for SettingsUi {
     fn default() -> Self {
-        Self { current: WALLPAPER_SECTION, back: vec![], forward: vec![], search: String::new(), message: String::new(), show_key: false, confirming: false, copied: None }
+        Self { current: WALLPAPER_SECTION, back: vec![], forward: vec![], search: String::new(), message: String::new(), copied: None }
     }
 }
 
@@ -35,7 +33,6 @@ impl SettingsUi {
             self.forward.clear();
             self.current = section;
             self.message.clear();
-            self.confirming = false;
         }
     }
 }
@@ -55,7 +52,7 @@ const SECTIONS: [Section; 6] = [
     Section { name: "Account", tint: [0x5a, 0x6b, 0x85], icon: icons::ACCOUNT, keywords: "name user password local", group: 0 },
     Section { name: "Appearance", tint: [0x1d, 0x1d, 0x1f], icon: r#"<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="white"/>"#, keywords: "dark light mode theme auto window windowed borderless fullscreen full screen display monitor screen", group: 1 },
     Section { name: "Wallpaper", tint: [0x2e, 0x7a, 0xb5], icon: icons::WALLPAPER, keywords: "background picture photo desktop fill fit stretch centre center tile colour color", group: 1 },
-    Section { name: "Stream Deck", tint: [0x1f, 0x8a, 0x6c], icon: icons::STREAMDECK, keywords: "api key keys address control", group: 2 },
+    Section { name: "Stream Deck", tint: [0x1f, 0x8a, 0x6c], icon: icons::STREAMDECK, keywords: "plugin keys address control connection", group: 2 },
     Section { name: "Software Update", tint: [0x6b, 0x6b, 0x70], icon: icons::UPDATE, keywords: "update version install new", group: 3 },
     Section { name: "About", tint: [0x1d, 0x0f, 0x5e], icon: r#"<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>"#, keywords: "version info", group: 3 },
 ];
@@ -593,16 +590,14 @@ fn copy_button(ui: &mut Ui, st: &mut SettingsUi, text: &str, label: &str, now: f
 }
 
 fn streamdeck_pane(ui: &mut Ui, st: &mut SettingsUi, core: &mut Core, now: f64) {
-    let key = core.settings.api_key.clone().unwrap_or_default();
-    ui.add(egui::Label::new(RichText::new("Each Stream Deck key calls a web address. Every address ends with your personal API key, so the keys only control your own Field Guide and Time Clock.").font(font(14.0, 400)).color(white(0.75))).wrap());
+    ui.add(egui::Label::new(RichText::new("Install the Victoria Ambulance plugin in the Stream Deck app and the keys just work. There's nothing to set up: they control whoever is signed in here.").font(font(14.0, 400)).color(white(0.75))).wrap());
 
-    section_header(ui, "Your API key");
+    section_header(ui, "Connection");
     let connected = core.server == ServerStatus::Running;
     egui::Frame::NONE.fill(group_bg()).stroke(Stroke::new(1.0_f32, white(0.1))).corner_radius(CornerRadius::same(10)).inner_margin(Margin::symmetric(16, 12)).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.horizontal_wrapped(|ui| {
-            let shown = if st.show_key { key.clone() } else { format!("{}{}", &key[..key.len().min(6)], "•".repeat(18)) };
-            ui.label(RichText::new(shown).font(mono(12.5)).color(ink()));
+            ui.label(RichText::new(if connected { "Ready for your Stream Deck" } else { "Not ready" }).font(font(14.0, 500)).color(ink()));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let text = if connected { "Connected" } else { "Not connected" };
                 ui.label(RichText::new(text).font(font(12.0, 400)));
@@ -614,30 +609,7 @@ fn streamdeck_pane(ui: &mut Ui, st: &mut SettingsUi, core: &mut Core, now: f64) 
     if let ServerStatus::Failed(msg) = &core.server {
         ui.label(RichText::new(msg).font(font(13.0, 400)).color(red_text()));
     }
-    ui.add_space(6.0);
-    ui.horizontal_wrapped(|ui| {
-        if theme::button(ui, if st.show_key { "Hide" } else { "Show" }, Btn::Glass, 13.0, None, Vec2::new(18.0, 8.0)).clicked() {
-            st.show_key = !st.show_key;
-        }
-        copy_button(ui, st, &key, "Copy key", now, false);
-        if st.confirming {
-            if theme::button(ui, "Yes, replace it", Btn::Danger, 13.0, None, Vec2::new(18.0, 8.0)).clicked() {
-                let mut s = core.settings.clone();
-                s.api_key = Some(new_api_key());
-                core.save_settings(s);
-                st.confirming = false;
-            }
-            if theme::button(ui, "Cancel", Btn::Glass, 13.0, None, Vec2::new(18.0, 8.0)).clicked() {
-                st.confirming = false;
-            }
-        } else if theme::button(ui, "New key…", Btn::Danger, 13.0, None, Vec2::new(18.0, 8.0)).clicked() {
-            st.confirming = true;
-        }
-    });
-    if st.confirming {
-        ui.label(RichText::new("A new key stops every Stream Deck key set up with the old one.").font(font(13.0, 400)).color(red_text()));
-    }
-    note(ui, "Keep this key to yourself. Anyone who has it can control your Field Guide.");
+    note(ui, "Keys only work on this PC, while Victoria Ambulance is open and someone is signed in.");
 
     section_header(ui, "Addresses for your keys");
     note(ui, "In the Stream Deck app, add a \"Website\" action, paste an address, and tick \"GET request in background\". Sending a key opens the Field Guide if it's closed. Victoria Ambulance has to be open for the keys to work.");
@@ -679,7 +651,7 @@ fn streamdeck_pane(ui: &mut Ui, st: &mut SettingsUi, core: &mut Core, now: f64) 
                         ui.add(egui::Label::new(RichText::new(format!("/api/{path}")).font(mono(12.5)).color(white(0.55))).wrap());
                     });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        let url = format!("http://localhost:{PORT}/api/{path}?key={key}");
+                        let url = format!("http://localhost:{PORT}/api/{path}");
                         copy_button(ui, st, &url, "Copy address", now, true);
                     });
                 });

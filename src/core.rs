@@ -62,11 +62,6 @@ impl Core {
     pub fn sign_in(&mut self, name: &str) {
         self.user = Some(name.to_string());
         self.settings = UserSettings::load(name);
-        // Each user gets their own API key the first time they log in.
-        if self.settings.api_key.is_none() {
-            self.settings.api_key = Some(crate::settings::new_api_key());
-            self.settings.save(name);
-        }
         self.sheet = TimeSheet::load(name);
         self.guide = FieldGuideState::default();
     }

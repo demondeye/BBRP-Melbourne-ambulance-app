@@ -2,10 +2,11 @@
 //! user's app and hear back whether it worked. Same addresses and answers as
 //! the web version, so the existing Stream Deck plugin keeps working:
 //!
-//!   GET/POST http://localhost:47913/api/<app>/<command>[/<arg>]   (x-api-key header or ?key=)
+//!   GET/POST http://localhost:47913/api/<app>/<command>[/<arg>]
 //!
-//! Each user has their own API key (Settings → Stream Deck), and only the key
-//! of whoever is signed in right now is accepted.
+//! It only listens on this PC, so no key is needed: commands go to whoever is
+//! signed in. Requests from web pages are refused (browsers label them with the
+//! site they came from), so a website you visit can't press the keys for you.
 
 use crate::core::{lock, ServerStatus, Shared, UiEvent};
 use serde_json::{json, Map, Value};
@@ -59,8 +60,24 @@ pub fn start(core: Shared, ctx: eframe::egui::Context) {
     });
 }
 
-fn valid_key(key: &str) -> bool {
-    key.len() == 35 && key.starts_with("va_") && key[3..].chars().all(|c| matches!(c, '0'..='9' | 'a'..='f'))
+/// A header's value, if the request has it.
+fn header(request: &tiny_http::Request, name: &'static str) -> Option<String> {
+    request.headers().iter().find(|h| h.field.equiv(name)).map(|h| h.value.as_str().to_string())
+}
+
+/// True when a web browser sent this (a page you have open, not the Stream Deck).
+/// Browsers always say which site a request came from; the Stream Deck plugin doesn't.
+fn from_browser(request: &tiny_http::Request) -> bool {
+    let site = header(request, "sec-fetch-site").map(|s| s.to_ascii_lowercase());
+    header(request, "origin").is_some() || site.is_some_and(|s| s != "none")
+}
+
+/// Only addresses that mean "this PC" (stops a website renaming itself to reach us).
+fn local_host(request: &tiny_http::Request) -> bool {
+    let Some(host) = header(request, "host") else { return true };
+    let host = host.to_ascii_lowercase();
+    let name = host.rsplit_once(':').map_or(host.as_str(), |(h, _)| h);
+    matches!(name, "localhost" | "127.0.0.1" | "[::1]")
 }
 
 fn route(path: &str) -> Option<(String, String, Option<String>)> {
@@ -91,15 +108,12 @@ fn handle(request: tiny_http::Request, core: &Shared, ctx: &eframe::egui::Contex
 
 fn respond(request: &tiny_http::Request, core: &Shared, ctx: &eframe::egui::Context) -> (u16, Value) {
     let url = request.url().to_string();
-    let (path, query) = url.split_once('?').unwrap_or((&url, ""));
+    let path = url.split_once('?').map_or(url.as_str(), |(p, _)| p);
     if !path.starts_with("/api/") {
         return (404, json!({ "ok": false, "error": "Not found" }));
     }
-    let header_key = request.headers().iter().find(|h| h.field.equiv("x-api-key")).map(|h| h.value.as_str().to_string());
-    let query_key = query.split('&').find_map(|p| p.strip_prefix("key=")).map(str::to_string);
-    let key = header_key.or(query_key).unwrap_or_default();
-    if !valid_key(&key) {
-        return (401, json!({ "ok": false, "error": "Missing or invalid API key" }));
+    if from_browser(request) || !local_host(request) {
+        return (403, json!({ "ok": false, "error": "Web pages can't control Victoria Ambulance" }));
     }
     let method = request.method().as_str().to_ascii_uppercase();
     if method != "GET" && method != "POST" {
@@ -111,9 +125,8 @@ fn respond(request: &tiny_http::Request, core: &Shared, ctx: &eframe::egui::Cont
     }
 
     let mut c = lock(core);
-    let signed_in = c.user.is_some() && c.settings.api_key.as_deref() == Some(key.as_str());
-    if !signed_in {
-        return (409, json!({ "ok": false, "error": "Nobody is signed in with this API key right now" }));
+    if c.user.is_none() {
+        return (409, json!({ "ok": false, "error": "Nobody is signed in right now" }));
     }
     let name = c.user.clone().unwrap_or_default();
     let mut sent = Map::new();
