@@ -278,6 +278,7 @@ pub fn install_and_relaunch(downloaded: &Path) -> Result<(), String> {
     }
     let _ = std::fs::remove_file(downloaded);
     std::process::Command::new(&exe)
+        .arg("--after-update")
         .current_dir(dir)
         .spawn()
         .map_err(|_| "The update was installed, but the app couldn't restart. Open Victoria Ambulance again.".to_string())?;

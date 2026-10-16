@@ -2,7 +2,7 @@
 //! user's app and hear back whether it worked. Same addresses and answers as
 //! the web version, so the existing Stream Deck plugin keeps working:
 //!
-//!   GET/POST http://localhost:5173/api/<app>/<command>[/<arg>]   (x-api-key header or ?key=)
+//!   GET/POST http://localhost:47913/api/<app>/<command>[/<arg>]   (x-api-key header or ?key=)
 //!
 //! Each user has their own API key (Settings → Stream Deck), and only the key
 //! of whoever is signed in right now is accepted.
@@ -11,7 +11,10 @@ use crate::core::{lock, ServerStatus, Shared, UiEvent};
 use serde_json::{json, Map, Value};
 use std::io::Cursor;
 
-pub const PORT: u16 = 5173;
+/// Victoria Ambulance's own port (the Stream Deck plugin uses the same one). Chosen so that
+/// nothing else uses it: not a well-known port, and below the range Windows
+/// hands out to other programs at random.
+pub const PORT: u16 = 47913;
 const APPS: [(&str, &[&str]); 2] = [
     ("fieldguide", &["open", "home", "next", "prev", "option", "mica", "step", "unstep", "reset", "reset-all"]),
     ("timeclock", &["toggle", "in", "out", "status"]),

@@ -10,12 +10,17 @@ mod display;
 mod fieldguide;
 mod relay;
 mod settings;
+mod single;
 mod storage;
 mod timeclock;
 mod ui;
 mod update;
 
 fn main() -> eframe::Result {
+    // Already open? Bring that window forward and stop here.
+    if !single::claim() {
+        return Ok(());
+    }
     let icon = image::load_from_memory(include_bytes!("../assets/icon.png")).ok().map(|img| {
         let img = img.to_rgba8();
         let (w, h) = img.dimensions();

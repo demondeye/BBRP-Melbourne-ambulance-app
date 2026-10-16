@@ -22,7 +22,7 @@ login / create local account → desktop with menu bar, dock, launcher and windo
   Field Guide (all pages, choices, MICA question, progress, confetti),
   Settings (wallpapers + your own picture, Stream Deck, Account, About),
   Patient Records, Notes and About placeholders
-- **Stream Deck control API** on `http://localhost:5173` with the same addresses,
+- **Stream Deck control API** on `http://localhost:47913` with the same addresses,
   API keys and replies, so the existing Stream Deck plugin keeps working.
   The app has to be open for the keys to work.
 
@@ -90,7 +90,7 @@ from a different release feed.
 src/main.rs            window setup
 src/app.rs             boot → login → desktop, restart / shut down
 src/core.rs            state shared with the Stream Deck server
-src/relay.rs           Stream Deck control API (localhost:5173)
+src/relay.rs           Stream Deck control API (localhost:47913)
 src/update.rs          software updates (GitHub Releases)
 src/auth.rs            local account
 src/settings.rs        per-user settings, wallpapers
