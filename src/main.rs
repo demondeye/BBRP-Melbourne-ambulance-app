@@ -6,6 +6,7 @@ mod app;
 mod auth;
 mod chime;
 mod core;
+mod display;
 mod fieldguide;
 mod relay;
 mod settings;
@@ -23,8 +24,17 @@ fn main() -> eframe::Result {
     let mut viewport = eframe::egui::ViewportBuilder::default()
         .with_title("Victoria Ambulance")
         .with_inner_size([1280.0, 800.0])
-        .with_min_inner_size([400.0, 480.0])
-        .with_maximized(std::env::var("VA_WINDOWED").is_err());
+        .with_min_inner_size([400.0, 480.0]);
+    // Not `.with_maximized(true)`: on Windows that can mark the window as maximised
+    // without actually resizing it. The app maximises itself once it's on screen (app.rs).
+    // Start in the saved window mode (the app finishes the job once it's on screen).
+    if std::env::var("VA_WINDOWED").is_err() {
+        match display::mode() {
+            display::Mode::Borderless => viewport = viewport.with_decorations(false),
+            display::Mode::Fullscreen => {}
+            display::Mode::Windowed => {}
+        }
+    }
     if let Some(icon) = icon {
         viewport = viewport.with_icon(icon);
     }

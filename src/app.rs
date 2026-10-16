@@ -1,4 +1,4 @@
-//! Power on → boot → login → desktop. Closing the app is like switching off:
+//! Boot → login → desktop. Shut Down (or closing the app) is like switching off:
 //! next time it always begins at boot and nobody stays logged in.
 
 use crate::auth;
@@ -30,8 +30,8 @@ const POWER_DOWN_SECS: f64 = 4.0;
 const INSTALL_SECS: f64 = 3.0;
 
 enum Stage {
-    /// None = waiting on the power button (after Shut Down).
-    Boot(Option<f64>),
+    /// Booting since this time.
+    Boot(f64),
     Login(LoginForm),
     Desktop(Box<Desktop>),
 }
@@ -59,6 +59,8 @@ pub struct App {
     install_done: bool,
     /// Frames drawn so far (used to make sure the window opens maximised).
     frames: u32,
+    max_check_at: u32,
+    max_tries: u32,
 }
 
 impl App {
@@ -72,7 +74,7 @@ impl App {
         // A desktop app may always play sound, so it starts straight away.
         crate::chime::play();
         let now = cc.egui_ctx.input(|i| i.time);
-        Self { core, stage: Stage::Boot(Some(now)), power_down: None, installing: None, install_done: false, frames: 0 }
+        Self { core, stage: Stage::Boot(now), power_down: None, installing: None, install_done: false, frames: 0, max_check_at: u32::MAX, max_tries: 0 }
     }
 
     fn to_login(&mut self, now: f64) {
@@ -115,70 +117,70 @@ impl eframe::App for App {
         }
     }
 
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         let now = ctx.input(|i| i.time);
-        // Always open maximised, filling the screen (Windows can ignore the start-up
-        // request, so ask again on the first few frames).
-        if self.frames < 3 && std::env::var("VA_WINDOWED").is_err() {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
+        // Open the way this PC is set (Settings → Appearance → Window): the mode and
+        // the screen. Once the window is on screen it's placed exactly (display.rs);
+        // a moment later the real size is checked, and if it still doesn't fill the
+        // screen it's placed again (Windows sometimes ignores the first attempt).
+        let mode = crate::display::mode();
+        if std::env::var("VA_WINDOWED").is_err() {
+            if self.frames == 1 {
+                crate::display::request(mode);
+                self.max_check_at = 20;
+            } else if self.frames == self.max_check_at && self.max_tries < 3 && !crate::display::busy() {
+                let (inner, monitor) = ctx.input(|i| (i.viewport().inner_rect, i.viewport().monitor_size));
+                let fills = match (inner, monitor) {
+                    (Some(r), Some(m)) => r.width() >= m.x * 0.9 && r.height() >= m.y * 0.8,
+                    _ => true,
+                };
+                if !fills {
+                    self.max_tries += 1;
+                    crate::display::request(mode);
+                    self.max_check_at = self.frames + 20;
+                }
+            }
+            if self.frames < 150 {
+                ctx.request_repaint();
+            }
         }
+        crate::display::tick(ctx, frame);
         self.frames = self.frames.saturating_add(1);
+        // F11 flips fullscreen on and off for now (the saved mode isn't changed).
         if ctx.input(|i| i.key_pressed(Key::F11)) {
             let full = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
-            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(!full));
+            if full {
+                let back = if mode == crate::display::Mode::Fullscreen { crate::display::Mode::Windowed } else { mode };
+                crate::display::request(back);
+            } else {
+                crate::display::request(crate::display::Mode::Fullscreen);
+            }
         }
         // Keep clocks ticking even when nothing moves.
         ctx.request_repaint_after(std::time::Duration::from_millis(500));
 
         match &mut self.stage {
-            Stage::Boot(started) => {
-                let mut start = false;
+            Stage::Boot(at) => {
+                let at = *at;
                 egui::CentralPanel::default().frame(egui::Frame::NONE.fill(egui::Color32::from_rgb(5, 13, 24))).show(ctx, |ui| {
                     let screen = ui.max_rect();
-                    match started {
-                        None => {
-                            // Shut down: wait for the power button.
-                            let c = screen.center();
-                            let r = Rect::from_center_size(c, Vec2::splat(84.0));
-                            let resp = ui.interact(r, Id::new("power"), Sense::click());
-                            let hover = ui.ctx().animate_bool_with_time(resp.id, resp.hovered(), 0.2);
-                            let r = r.expand(hover * 2.0);
-                            ui.painter().circle(r.center(), r.width() / 2.0, lit(0.08 + 0.08 * hover), Stroke::new(1.0_f32, lit(0.18)));
-                            let mut child = ui.new_child(UiBuilder::new().max_rect(Rect::from_center_size(c, Vec2::splat(30.0))));
-                            icons::line_icon(&mut child, "power", icons::POWER, 30.0, lit(0.85), 2.0);
-                            ui.painter().text(Pos2::new(c.x, r.bottom() + 22.0), Align2::CENTER_TOP, "Power on", font(13.0, 400), lit(0.5));
-                            if resp.hovered() {
-                                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                            }
-                            if resp.clicked() || ui.input(|i| i.key_pressed(Key::Enter) || i.key_pressed(Key::Space)) {
-                                start = true;
-                            }
-                        }
-                        Some(at) => {
-                            let age = now - *at;
-                            let fade_in = ((age / 0.6).min(1.0)) as f32;
-                            let c = screen.center();
-                            let logo = Rect::from_center_size(c - Vec2::new(0.0, 24.0), Vec2::splat(88.0));
-                            ui.set_opacity(((age / 0.4).min(1.0)) as f32);
-                            icons::logo_at(ui, logo);
-                            let bar = Rect::from_center_size(Pos2::new(c.x, logo.bottom() + 44.0 + 2.5), Vec2::new(190.0f32.min(screen.width() * 0.6), 5.0));
-                            ui.painter().rect_filled(bar, 3.0, lit(0.18 * fade_in));
-                            let t = (age / (boot_secs() - 0.6)).clamp(0.0, 1.0) as f32;
-                            let frac = boot_progress(t);
-                            if frac > 0.0 {
-                                ui.painter().rect_filled(Rect::from_min_size(bar.min, Vec2::new(bar.width() * frac, 5.0)), 3.0, fade(WHITE, fade_in));
-                            }
-                            ui.ctx().request_repaint();
-                        }
+                    let age = now - at;
+                    let fade_in = ((age / 0.6).min(1.0)) as f32;
+                    let c = screen.center();
+                    let logo = Rect::from_center_size(c - Vec2::new(0.0, 24.0), Vec2::splat(88.0));
+                    ui.set_opacity(((age / 0.4).min(1.0)) as f32);
+                    icons::logo_at(ui, logo);
+                    let bar = Rect::from_center_size(Pos2::new(c.x, logo.bottom() + 44.0 + 2.5), Vec2::new(190.0f32.min(screen.width() * 0.6), 5.0));
+                    ui.painter().rect_filled(bar, 3.0, lit(0.18 * fade_in));
+                    let t = (age / (boot_secs() - 0.6)).clamp(0.0, 1.0) as f32;
+                    let frac = boot_progress(t);
+                    if frac > 0.0 {
+                        ui.painter().rect_filled(Rect::from_min_size(bar.min, Vec2::new(bar.width() * frac, 5.0)), 3.0, fade(WHITE, fade_in));
                     }
+                    ui.ctx().request_repaint();
                 });
-                if start {
-                    crate::chime::play();
-                    self.stage = Stage::Boot(Some(now));
-                } else if let Stage::Boot(Some(at)) = self.stage {
-                    if now - at >= boot_secs() {
-                        self.to_login(now);
-                    }
+                if now - at >= boot_secs() {
+                    self.to_login(now);
                 }
             }
             Stage::Login(form) => {
@@ -209,7 +211,7 @@ impl eframe::App for App {
             }
         }
 
-        // Restart / shut down: fade to black, then log out and boot again (or stay off).
+        // Restart / shut down: fade to black, then log out and boot again (Restart) or close the app (Shut Down).
         if let Some((at, kind)) = self.power_down {
             let age = now - at;
             egui::Area::new(Id::new("powerdown")).order(egui::Order::Debug).fixed_pos(Pos2::ZERO).show(ctx, |ui| {
@@ -233,9 +235,12 @@ impl eframe::App for App {
                     d.wm.close_all();
                 }
                 lock(&self.core).sign_out();
-                self.stage = Stage::Boot(if kind == Power::Restart { Some(now) } else { None });
                 if kind == Power::Restart {
+                    self.stage = Stage::Boot(now);
                     crate::chime::play();
+                } else {
+                    // Shut Down: this "computer" turns off, so the app closes.
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             }
         }

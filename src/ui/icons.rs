@@ -32,7 +32,6 @@ pub fn app_icon_paths(id: &str) -> &'static str {
     }
 }
 
-pub const POWER: &str = r#"<path d="M12 3v9"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/>"#;
 pub const ARROW: &str = r#"<path d="M5 12h14M13 6l6 6-6 6"/>"#;
 pub const PENCIL: &str = r#"<path d="M4 20h4L19 9l-4-4L4 16z M13 7l4 4"/>"#;
 pub const BIN: &str = r#"<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>"#;

@@ -470,7 +470,7 @@ impl Desktop {
         let restart = p == Power::Restart;
         self.confirm = Some(Confirm {
             title: if restart { "Restart now?" } else { "Shut down now?" }.into(),
-            message: format!("You will be logged out and all open apps will close{}", if restart { ", then the system will start again." } else { "." }),
+            message: format!("You will be logged out and all open apps will close{}", if restart { ", then the system will start again." } else { ", then Victoria Ambulance will turn off." }),
             label: if restart { "Restart" } else { "Shut Down" }.into(),
             action: ConfirmAction::Power(p),
             at: now,

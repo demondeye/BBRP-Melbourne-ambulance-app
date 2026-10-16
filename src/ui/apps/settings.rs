@@ -53,7 +53,7 @@ struct Section {
 // Add a settings section: write a pane function, add a line here and to `pane()`.
 const SECTIONS: [Section; 6] = [
     Section { name: "Account", tint: [0x5a, 0x6b, 0x85], icon: icons::ACCOUNT, keywords: "name user password local", group: 0 },
-    Section { name: "Appearance", tint: [0x1d, 0x1d, 0x1f], icon: r#"<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="white"/>"#, keywords: "dark light mode theme auto", group: 1 },
+    Section { name: "Appearance", tint: [0x1d, 0x1d, 0x1f], icon: r#"<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="white"/>"#, keywords: "dark light mode theme auto window windowed borderless fullscreen full screen display monitor screen", group: 1 },
     Section { name: "Wallpaper", tint: [0x2e, 0x7a, 0xb5], icon: icons::WALLPAPER, keywords: "background picture photo desktop fill fit stretch centre center tile colour color", group: 1 },
     Section { name: "Stream Deck", tint: [0x1f, 0x8a, 0x6c], icon: icons::STREAMDECK, keywords: "api key keys address control", group: 2 },
     Section { name: "Software Update", tint: [0x6b, 0x6b, 0x70], icon: icons::UPDATE, keywords: "update version install new", group: 3 },
@@ -340,6 +340,39 @@ fn appearance_pane(ui: &mut Ui, core: &mut Core) {
         });
     });
     note(ui, "Auto follows the light or dark setting in Windows.");
+
+    // How the app's own window shows (for this PC, remembered every time it opens).
+    let current_mode = crate::display::mode();
+    group(ui, Some("Window"), |ui| {
+        row(ui, true, "Window mode", None, |ui| {
+            let label = crate::display::MODES.iter().find(|(m, _)| *m == current_mode).map_or("Windowed", |m| m.1);
+            egui::ComboBox::from_id_salt("window-mode").selected_text(label).width(190.0).show_ui(ui, |ui| {
+                for (m, name) in crate::display::MODES {
+                    if ui.selectable_label(current_mode == m, name).clicked() && current_mode != m {
+                        crate::display::set_mode(m);
+                    }
+                }
+            });
+        });
+        // Which screen the app sits on (each connected monitor is detected).
+        let screens = crate::display::monitors();
+        let target = crate::display::target_monitor();
+        row(ui, false, "Display", None, |ui| {
+            let label = target.as_ref().map_or("This screen".to_string(), |m| m.label.clone());
+            egui::ComboBox::from_id_salt("window-monitor").selected_text(label).width(190.0).show_ui(ui, |ui| {
+                if screens.is_empty() {
+                    ui.label("This screen");
+                }
+                for m in &screens {
+                    let on = target.as_ref().is_some_and(|t| t.id == m.id);
+                    if ui.selectable_label(on, &m.label).clicked() && !on {
+                        crate::display::set_monitor(Some(m.id.clone()));
+                    }
+                }
+            });
+        });
+    });
+    note(ui, "Saved on this PC and used every time Victoria Ambulance opens. If the chosen display is unplugged, the main one is used. F11 switches fullscreen on and off for now.");
     if let Some(id) = pick {
         let mut s = core.settings.clone();
         s.appearance = id.to_string();
